@@ -1,0 +1,833 @@
+private void ClickCalculate(object sender, EventArgs e)
+		{
+////////////////
+				CalculatePeaks();
+				Normalization();
+////////////////
+		}
+private void CalculatePeaks()
+		{
+			if (m_bIniLoaded) {
+				int iNumberFiles = m_lFilesAndData.Count();
+				double[] dSpectr = new double[CSpectr.SP_SIZE];
+				double dTime = 0.0, dCA = 0.0, dCB = 0.0;
+				byte[] bNumberPeaks = new byte[m_bNumberPeaks];
+				for (int iC = 0; iC < iNumberFiles; iC++) {
+					if (m_lFilesAndData[iC].m_bNumberSpectrs) {
+						m_lFilesAndData[iC].m_adPeaks = new double[m_bNumberPeaks, m_bNumberDetectors];
+						for (byte bPeak = 0; bPeak < m_bNumberPeaks; bPeak++) {
+							bNumberPeaks[bPeak] = 0;
+							for (byte bDetector = 0; bDetector < m_bNumberDetectors; bDetector++) m_lFilesAndData[iC].m_adPeaks[bPeak, bDetector] = 0.0;
+						}
+						for (byte bDetector = 0; bDetector < m_bNumberDetectors; bDetector++) {
+							if (m_bEnable[bDetector]) {
+								double dWidthOnHalfHeightPercents, dEnergyPerChanel = m_dScale * 1000.0 / CSpectr.SP_SIZE, dPeakEnergy, dPeakMayBe, dWidthOnHalfHeight, dCoeffMainPeak; // dHeight = m_dFirstPeakDiapazon
+								dWidthOnHalfHeightPercents = m_dFirstPeakDeviation;
+								m_lFilesAndData[iC].m_lcsSumSpectrs[bDetector].GetDoubleSpectr(ref dSpectr, ref dTime, ref dCA, ref dCB);
+								for (byte bPeak = 0; bPeak < m_bNumberPeaks; bPeak++) {
+									dPeakEnergy = m_dEnergy[bPeak, bDetector];
+									dPeakMayBe = dPeakEnergy / dEnergyPerChanel;
+									if (bPeak != 0) {
+										dCoeffMainPeak = m_lFilesAndData[iC].m_adPeaks[0, bDetector] * dEnergyPerChanel / m_dEnergy[0, bDetector];
+										dPeakMayBe *= dCoeffMainPeak;
+									}
+									dWidthOnHalfHeight = dWidthOnHalfHeightPercents * Math.Sqrt(2230.0 / dPeakEnergy) * dPeakMayBe;
+									m_lFilesAndData[iC].m_adPeaks[bPeak, bDetector] = m_lFilesAndData[iC].m_lcsSumSpectrs[bDetector].PeakPosition((int)(dPeakMayBe + 0.5), dWidthOnHalfHeightPercents * 100.0, (int)(dWidthOnHalfHeight + 0.5));
+									if (m_lFilesAndData[iC].m_adPeaks[bPeak, bDetector] > 1.0) bNumberPeaks[bPeak]++;
+								}
+							}
+							else {
+								for (byte bPeak = 0; bPeak < m_bNumberPeaks; bPeak++) bNumberPeaks[bPeak]++;
+							}
+						}
+						int iSumm = 0;
+						bool bLess = false;
+						string sValue = "";
+						for (byte bPeak = 0; bPeak < m_bNumberPeaks; bPeak++) {
+							if (bPeak != 0) sValue += " ";
+							if (bNumberPeaks[bPeak] == m_bNumberDetectors) { sValue += bNumberPeaks[bPeak].ToString(); }
+							else {
+								sValue += "[";
+								byte bC = 0;
+								for (byte bDetector = 0; bDetector < m_bNumberDetectors; bDetector++) {
+									if (bC != 0) sValue += " ";
+									if (m_lFilesAndData[iC].m_adPeaks[bPeak, bDetector] <= 1.0) sValue += (bDetector + 1).ToString();
+								}
+								sValue += "]";
+							}
+							if (bPeak < 2) iSumm += bNumberPeaks[bPeak];
+							else bLess = (bNumberPeaks[bPeak] < m_bNumberDetectors);
+						}
+						m_dgvFiles.Rows[iC].Cells["Peaks"].Value = sValue;
+						if (iSumm < m_bNumberDetectors * 2) {
+							m_lFilesAndData[iC].m_bPeaks = false;
+							m_dgvFiles.Rows[iC].Cells["Peaks"].Style.BackColor = Color.FromArgb(255, 0, 0); }
+						else {
+							m_lFilesAndData[iC].m_bPeaks = true;
+							for (byte bDetector = 0; bDetector < m_bNumberDetectors; bDetector++) {
+								if (m_bEnable[bDetector]) {
+									double dE1 = m_dEnergy[0, bDetector] / 1000.0, dE2 = m_dEnergy[1, bDetector] / 1000.0;
+									double dCh1 = m_lFilesAndData[iC].m_adPeaks[0, bDetector], dCh2 = m_lFilesAndData[iC].m_adPeaks[1, bDetector];
+									m_lFilesAndData[iC].m_lcsSumSpectrs[bDetector].Calibration(dCh1, dE1, dCh2, dE2);
+								}
+							}
+							if (bLess) { m_dgvFiles.Rows[iC].Cells["Peaks"].Style.BackColor = Color.FromArgb(255, 128, 128); }
+							else { m_dgvFiles.Rows[iC].Cells["Peaks"].Style.BackColor = Color.FromArgb(255, 255, 255); }
+						}
+					}
+				}
+			}
+		}
+		private void Normalization()
+		{
+			if (m_bIniLoaded) {
+				int			iNumberFiles = m_lFilesAndData.Count();
+				double[]	dSpectr = new double[CSpectr.SP_SIZE];
+				double		dEpC = m_dScale / CSpectr.SP_SIZE;
+				for (int iC = 0; iC < iNumberFiles; iC++) {
+					if (m_lFilesAndData[iC].m_bPeaks) {
+						m_lFilesAndData[iC].m_lcsNormSpectrs = new List<CSpectr>();
+						for (byte bDetector = 0; bDetector < m_bNumberDetectors; bDetector++) {
+							if (m_bEnable[bDetector]) {
+								for (int i = 0; i < CSpectr.SP_SIZE; i++) dSpectr[i] = m_lFilesAndData[iC].m_lcsSumSpectrs[bDetector].SummEnergy(i * dEpC, (i + 1) * dEpC);
+							}
+							else {
+								for (int i = 0; i < CSpectr.SP_SIZE; i++) dSpectr[i] = 0.0;
+							}
+							CSpectr csTemp = new CSpectr();
+							csTemp.FromDoubleArray(ref dSpectr, 1.0, false);
+							m_lFilesAndData[iC].m_lcsNormSpectrs.Add(csTemp);
+						}
+					}
+				}
+			}
+		}
+public class CSpectr
+	{
+		public const UInt16 SP_SIZE = 0x0400;
+		public const double EnergyH = 2.23;
+		public const double Scale = 13.0;
+		public const double PEAK_H = 175.48;
+		public const double PEAK_CA = 505.7;
+		public const double ONE_CH = Scale / (double) (SP_SIZE - 1);
+		protected double[] m_dMainSpectr;
+		protected double[] m_dRejectSpectr;
+		protected double m_dCoeffA;
+		protected double m_dCoeffB;
+		protected double m_dTime;
+		protected bool m_bEnable;
+		protected bool m_bSaveReject;
+		protected double m_dToTime;
+		public Pen m_pPen;
+		public bool m_bOn;
+		public CSpectr()
+		{
+			m_dMainSpectr = new double[SP_SIZE];
+			m_dRejectSpectr = new double[SP_SIZE];
+			m_dCoeffA = 1.0;
+			m_dCoeffB = 0.0;
+			m_dTime = 0.0;
+			m_bEnable = true;
+			m_bSaveReject = false;
+			m_dToTime = 0.0;
+			m_pPen = new Pen(Color.Black);
+			m_bOn = true;
+		}
+		public CSpectr(CSpectr csSpectr)
+		{
+			m_dMainSpectr = new double[csSpectr.m_dMainSpectr.Length];
+			csSpectr.m_dMainSpectr.CopyTo(m_dMainSpectr, 0);
+			m_dRejectSpectr = new double[csSpectr.m_dRejectSpectr.Length];
+			csSpectr.m_dRejectSpectr.CopyTo(m_dRejectSpectr, 0);
+			m_dCoeffA = csSpectr.m_dCoeffA;
+			m_dCoeffB = csSpectr.m_dCoeffB;
+			m_dTime = csSpectr.m_dTime;
+			m_bEnable = csSpectr.m_bEnable;
+			m_bSaveReject = csSpectr.m_bSaveReject;
+			m_dToTime = csSpectr.m_dToTime;
+			m_pPen = new Pen(csSpectr.m_pPen.Color, csSpectr.m_pPen.Width);
+			m_bOn = csSpectr.m_bOn;
+		}
+		public void FromSpectr(CSpectr csSpectr, bool bSavePen = true)
+		{
+			m_dMainSpectr = new double[csSpectr.m_dMainSpectr.Length];
+			csSpectr.m_dMainSpectr.CopyTo(m_dMainSpectr, 0);
+			m_dRejectSpectr = new double[csSpectr.m_dRejectSpectr.Length];
+			csSpectr.m_dRejectSpectr.CopyTo(m_dRejectSpectr, 0);
+			m_dCoeffA = csSpectr.m_dCoeffA;
+			m_dCoeffB = csSpectr.m_dCoeffB;
+			m_dTime = csSpectr.m_dTime;
+			m_bEnable = csSpectr.m_bEnable;
+			m_bSaveReject = csSpectr.m_bSaveReject;
+			m_dToTime = csSpectr.m_dToTime;
+			if (!bSavePen)
+			{
+				m_pPen.Dispose();
+				m_pPen = new Pen(csSpectr.m_pPen.Color, csSpectr.m_pPen.Width);
+			}
+		}
+		public void GetDWordSpectr(ref UInt32[] dwSpectr, ref Single fTime, ref Single fCA, ref Single fCB)
+		{
+			UInt32 dwSize = (UInt32) ((dwSpectr.Length > m_dMainSpectr.Length) ? m_dMainSpectr.Length : dwSpectr.Length);
+			fTime = (Single) m_dTime;
+			fCA = (Single) m_dCoeffA;
+			fCB = (Single) m_dCoeffB;
+			for (UInt32 dwC = 0; dwC < dwSize; dwC++) { dwSpectr[dwC] = (UInt32) (m_dMainSpectr[dwC] + 0.5); }
+		}
+		public void GetDoubleSpectr(ref double[] dSpectr, ref double dTime, ref double dCA, ref double dCB)
+		{
+			UInt32 dwSize = (UInt32) Math.Min(dSpectr.Length, m_dMainSpectr.Length);
+			dTime = m_dTime;
+			dCA = m_dCoeffA;
+			dCB = m_dCoeffB;
+			for (UInt32 dwC = 0; dwC < dwSize; dwC++) { dSpectr[dwC] = m_dMainSpectr[dwC]; }
+		}
+		public static CSpectr operator +(CSpectr csFirst, CSpectr csSecond)
+		{
+			CSpectr csResult = new CSpectr(csFirst);
+			csResult.m_dTime += csSecond.m_dTime;
+			for (int i = 0; i < SP_SIZE; i++)
+			{
+				csResult.m_dMainSpectr[i] += csSecond.m_dMainSpectr[i];
+				csResult.m_dRejectSpectr[i] += csSecond.m_dRejectSpectr[i];
+			}
+			return csResult;
+		}
+		public static CSpectr operator -(CSpectr csFirst, CSpectr csSecond)
+		{
+			CSpectr csResult = new CSpectr(csFirst);
+			//csResult.m_dTime += csSecond.m_dTime;
+			for (int i = 0; i < SP_SIZE; i++)
+			{
+				csResult.m_dMainSpectr[i] -= csSecond.m_dMainSpectr[i];
+				csResult.m_dRejectSpectr[i] -= csSecond.m_dRejectSpectr[i];
+			}
+			return csResult;
+		}
+		public static CSpectr operator *(CSpectr csFirst, double dMul)
+		{
+			CSpectr csResult = new CSpectr(csFirst);
+			//csResult.m_dTime *= dMul;
+			for (int i = 0; i < SP_SIZE; i++)
+			{
+				csResult.m_dMainSpectr[i] *= dMul;
+				csResult.m_dRejectSpectr[i] *= dMul;
+			}
+			return csResult;
+		}
+		private void BeginEndCorrection(int iB, int iE, ref int iBC, ref int iEC)
+		{
+			int ib, ie;
+			if (iB > iE)
+			{
+				ib = iE;
+				ie = iB;
+			}
+			else
+			{
+				ib = iB;
+				ie = iE;
+			}
+			if ((ib >= SP_SIZE) || (ie < 0))
+			{
+				ib = 0;
+				ie = 0;
+			}
+			else
+			{
+				if (ib < 0) { ib = 0; }
+				if (ie >= SP_SIZE) { ie = SP_SIZE - 1; }
+			}
+			iBC = ib;
+			iEC = ie;
+		}
+		public double ChanelToEnergy(double dC)
+		{
+			return m_dCoeffA * dC + m_dCoeffB;
+		}
+		public double EnergyToChanel(double dE)
+		{
+			return (dE - m_dCoeffB) / m_dCoeffA;
+		}
+		private void BeginEndCorrection(double dB, double dE, ref double dBC, ref double dEC)
+		{
+			double db, de, dbs, des;
+			dbs = ChanelToEnergy(0);
+			des = ChanelToEnergy(SP_SIZE - 1);
+			if (dB > dE) {
+				db = dE;
+				de = dB;
+			}
+			else {
+				db = dB;
+				de = dE;
+			}
+			if ((db > des) || (de < dbs)) {
+				db = dbs;
+				de = dbs;
+			}
+			else {
+				if (db < dbs) {
+					db = dbs;
+				}
+				if (de > des) {
+					de = des;
+				}
+			}
+			dBC = db;
+			dEC = de;
+		}
+		public void FromDoubleArray(ref double[] dSpectr, double dTime, bool bAdd = false)
+		{
+			UInt32 dwSize = (UInt32) ((dSpectr.Length > m_dMainSpectr.Length) ? m_dMainSpectr.Length : dSpectr.Length);
+			if (bAdd) {
+				for (UInt32 dwC = 0; dwC < dwSize; dwC++) { m_dMainSpectr[dwC] += dSpectr[dwC]; }
+				m_dTime += dTime;
+			}
+			else {
+				for (UInt32 dwC = 0; dwC < dwSize; dwC++) { m_dMainSpectr[dwC] = dSpectr[dwC]; }
+				m_dTime = dTime;
+			}
+		}
+		public void FromDWordArray(ref UInt32[] dwSpectr, double dTime, bool bAdd = false)
+		{
+			UInt32 dwSize = (UInt32)((dwSpectr.Length > m_dMainSpectr.Length) ? m_dMainSpectr.Length : dwSpectr.Length);
+			if (bAdd)
+			{
+				for (UInt32 dwC = 0; dwC < dwSize; dwC++) { m_dMainSpectr[dwC] += dwSpectr[dwC]; }
+				m_dTime += dTime;
+			}
+			else
+			{
+				for (UInt32 dwC = 0; dwC < dwSize; dwC++) { m_dMainSpectr[dwC] = dwSpectr[dwC]; }
+				m_dTime = dTime;
+			}
+		}
+		public void FromWordArray(ref UInt16[] wSpectr, double dTime, bool bAdd = false)
+		{
+			UInt32 dwSize = (UInt32) ((wSpectr.Length > m_dMainSpectr.Length) ? m_dMainSpectr.Length : wSpectr.Length);
+			if (bAdd)
+			{
+				for (UInt32 dwC = 0; dwC < dwSize; dwC++) { m_dMainSpectr[dwC] += wSpectr[dwC]; }
+				m_dTime += dTime;
+			}
+			else
+			{
+				for (UInt32 dwC = 0; dwC < dwSize; dwC++) { m_dMainSpectr[dwC] = wSpectr[dwC]; }
+				m_dTime = dTime;
+			}
+		}
+		public void Draw(Graphics g, Rectangle clipBounds, double dMax, int iB, int iE, bool bLL, bool bReject)
+		{
+			int i, ib = 0, ie = 1024;
+			int iH, iW, iX, iY, iXC, iYC, iXP, iYP;
+			double dx, dy, dkx, dky;
+			double dM = dMax;
+			BeginEndCorrection(iB, iE, ref ib, ref ie);
+			iX = clipBounds.Left;
+			iY = clipBounds.Top;
+			iW = clipBounds.Right - clipBounds.Left;
+			iH = clipBounds.Bottom - clipBounds.Top;
+			iXP = iX;
+			iYP = iY + iH;
+			dkx = (double) iW / (double) (ie - ib + 1);
+			if (dM == 0) { dM = 1; }
+			if (bLL) { dky = (double) iH / (double) dM; }
+			else { dky = (double) iH / Math.Log10(dM + 1.0); }
+			System.Drawing.Drawing2D.GraphicsPath path = new System.Drawing.Drawing2D.GraphicsPath();
+			for (i = ib; i <= ie; i++)
+			{
+				dx = (double) (i - ib) * dkx;
+				double dValue = bReject ? m_dRejectSpectr[i] : m_dMainSpectr[i];
+				if (bLL) { dy = dValue * dky; }
+				else { dy = Math.Log10(dValue + 1.0) * dky; }
+				iXC = (int) (iX + dx + 0.5 * dkx + 0.5);
+				iYC = (int) (iY + iH - dy + 0.5);
+//				g.DrawLine(m_pPen, iXP, iYP, iXC, iYC);
+				path.AddLine(iXP, iYP, iXC, iYC);
+				iXP = iXC;
+				iYP = iYC;
+			}
+			g.DrawPath(m_pPen, path);
+		}
+		public double GetCount(UInt32 dwCh, bool bReject = false)
+		{
+			double dResult = 0.0;
+			if (bReject) { if (dwCh < m_dRejectSpectr.Length) dResult = m_dRejectSpectr[dwCh]; }
+			else { if (dwCh < m_dMainSpectr.Length) dResult = m_dMainSpectr[dwCh]; }
+			return dResult;
+		}
+		public double GetTime() { return m_dTime; }
+		public double SummChanel(int iB, int iE, bool bReject = false)
+		{
+			double dS = 0.0;
+			int i, ib = 0, ie = 0;
+			BeginEndCorrection(iB, iE, ref ib, ref ie);
+			if (iB < 0 || iB >= SP_SIZE || iE < 0 || iE >= SP_SIZE)
+			{
+				return 0.0;
+			}
+			for (i = ib; i <= ie; i++)
+			{
+				if (bReject)
+				{
+					dS += m_dRejectSpectr[i];
+				}
+				else
+				{
+					dS += m_dMainSpectr[i];
+				}
+			}
+			return dS;
+		}
+		public int PeakK40Around(double dThreshold)
+		{
+			double SumB, SumE;
+			int i, iP = 0;
+
+			for (i = SP_SIZE - 10; i > 20; i--)
+			{
+				SumB = SummChanel(10, i);
+				SumE = SummChanel(i, SP_SIZE - 1);
+				if ((SumE / SumB) > dThreshold)
+				{
+					iP = i;
+					i = 0;
+				}
+			}
+			return iP;
+		}
+		public double PeakKThreshold(int iMarker)
+		{
+			return SummChanel(iMarker, SP_SIZE - 1) / SummChanel(10, iMarker);
+		}
+		public int PeakK40SecondStep(int iChannel, int iWidth)
+		{
+			int iPeak = iChannel + iWidth * 2, iSum, iMaxSumm = 0;
+
+			if (iPeak >= m_dMainSpectr.Length) iPeak = m_dMainSpectr.Length - 1;
+			for (int iC = iPeak; iC >= (iChannel - iWidth * 2); iC--)
+			{
+				iSum = (int) SummChanel(iC - iWidth, iC);
+				if (iSum > iMaxSumm)
+				{
+					iPeak = iC - iWidth / 2;
+					iMaxSumm = iSum;
+				}
+			}
+			return iPeak;
+		}
+		public double PeakImprove(int iPeak, int iWidth, ref double dSigma)
+		{
+			int j;
+			double dx, dX, dY, dXX, dXY, dy, dA, dB, dP, dW, dC, dZ;
+			dX = 0.0;
+			dY = 0.0;
+			dXX = 0.0;
+			dXY = 0.0;
+			dW = 2.0 * iWidth + 1.0;
+			for (j = iPeak - iWidth; j <= iPeak + iWidth; j++)
+			{
+				if (((j - 1) >= 0) && ((j - 1) < m_dMainSpectr.Length) && ((j + 1) >= 0) && ((j + 1) < m_dMainSpectr.Length))
+				{
+					dC = m_dMainSpectr[j - 1];
+					dZ = m_dMainSpectr[j + 1];
+					if (Math.Abs(dZ) < 1e-20 || Math.Abs(dC) < 1e-20 || dC * dZ < 0.0) { dW -= 1.0; }
+					else
+					{
+						dx = (double)j;
+						dy = Math.Log(dC / dZ);
+						dX += dx;
+						dY += dy;
+						dXX += dx * dx;
+						dXY += dx * dy;
+					}
+				}
+				else { dW -= 1.0; }
+			}
+			if (dW > 0.0)
+			{
+				dA = (dW * dXY - dX * dY) / (dW * dXX - dX * dX);
+				dB = (dY - dA * dX) / dW;
+				dP = -dB / dA;
+				dSigma = (Math.Abs(dA) > 1e-20) ? Math.Sqrt(2.0 / dA) : -1.0;
+				if (dP < iPeak - iWidth || dP > iPeak + iWidth)
+				{
+					dP = iPeak;
+					dSigma = -1.0;
+				}
+			}
+			else
+			{
+				dP = iPeak;
+				dSigma = -1.0;
+			}
+			return dP;
+		}
+		public int Peak(int iB, int iE, int iWH)
+		{
+			int ib = 0, ie = 0, iP = -1;
+			double dLS, dRS, dPD = -1.0, dCD;
+			BeginEndCorrection(iB, iE, ref ib, ref ie);
+			while ((ib <= ie) && (iP == -1))
+			{
+				dLS = SummChanel(ib - iWH + 1, ib);
+				dRS = SummChanel(ib + 1, ib + iWH);
+				dCD = dRS - dLS;
+				if ((dPD >= 0.0) && (dCD < 0.0))
+				{
+					iP = ib;
+				}
+				dPD = dCD;
+				ib++;
+			}
+			return iP;
+		}
+		public double PeakF(int iWH, int iBCh, int iECh)
+		{
+			int ib = 0, ie = 0, ip;
+			double dP, dS = -1.0;
+
+			BeginEndCorrection(iBCh, iECh, ref ib, ref ie);
+			ip = Peak(ib, ie, iWH);
+			if (ip != -1) { dP = PeakImprove(ip, iWH, ref dS); }
+			else { dP = -1.0; }
+			return dP;
+		}
+		protected int Sign(double dValue)
+        {
+			int iResult = -1;
+			if (dValue >= 0.0) iResult = 1;
+			return iResult;
+        }
+		public void Derivative(int iKt)
+		{
+			if (iKt < 1) { iKt = 1; }
+			double[] dDer = new double[SP_SIZE];
+			for (int i = iKt; i <= SP_SIZE - 1 - iKt; i++)
+			{
+				double dLeft = 0.0, dRight = 0.0;
+				for (int j = 0; j <= iKt - 1; j++) {
+					dLeft += m_dMainSpectr[i - j - 1];
+					dRight += m_dMainSpectr[i + j + 1];
+				}
+				dLeft /= iKt;
+				dRight /= iKt;
+				dDer[i] = (dRight - dLeft) / (iKt + 1);
+			}
+			for (int i = 0; i <= iKt - 1; i++) {
+				dDer[i] = (m_dMainSpectr[i + 1] - m_dMainSpectr[i]) / 2;
+			}
+			for (int i = SP_SIZE - iKt; i <= SP_SIZE - 1; i++) {
+				dDer[i] = (m_dMainSpectr[i] - m_dMainSpectr[i - 1]) / 2;
+			}
+			for (int i = 0; i <= SP_SIZE - 1; i++) {
+				m_dMainSpectr[i] = dDer[i];
+			}
+		}
+		public double PeakPosition(int iPeakPosApp, double dRazrApp, int iGrPeakPosApp)
+		{
+			double dPeakPos;
+			if (iPeakPosApp < 1 || iPeakPosApp > SP_SIZE - 2)
+			{
+				dPeakPos = -1.0;
+				return dPeakPos;
+			}
+			else
+			{
+				int iPolShMax = iGrPeakPosApp, Dopusk, Num = 0, NumP = 6, iMax = iPeakPosApp, i;
+				int iDer = (int) Math.Round(0.000000046 * iPeakPosApp * iPeakPosApp * iPeakPosApp - 0.0000454 * iPeakPosApp * iPeakPosApp + 0.014298293 * iPeakPosApp + 2.571662206);
+				double dMax = 0.0;
+				CSpectr tmps;
+				for (i = iPeakPosApp - iPolShMax; i <= iPeakPosApp + iPolShMax; i++) {
+					if (i < 0) { i = 0; }
+					if (i > SP_SIZE - 1) { i = SP_SIZE - 1; }
+					if (m_dMainSpectr[i] > dMax) {
+						dMax = m_dMainSpectr[i];
+						iMax = i;
+					}
+				}
+				iPeakPosApp = iMax;
+				dRazrApp *= Math.Sqrt(175.0 / iPeakPosApp);
+				iPolShMax = (int) (dRazrApp / 100.0 * iPeakPosApp / 2);
+				do {
+					tmps = new CSpectr(this);
+					tmps.Derivative(iDer);
+					tmps.Derivative(iDer);
+					Dopusk = -1;
+					for (i = iPeakPosApp - iPolShMax; i <= iPeakPosApp + iPolShMax; i++) {
+						if (i < 0) { i = 0; }
+						if (i > SP_SIZE - 1) { i = SP_SIZE - 1; }
+						if (tmps.m_dMainSpectr[i] * tmps.m_dMainSpectr[i + 1] < 0) {
+							Dopusk += 1;
+						}
+					}
+					iDer += 1; Num += 1;
+					if (Num == NumP && Dopusk > 1) {
+						dPeakPos = -1.0;
+						return dPeakPos;
+					}
+				} while (Dopusk > 1 && Num < NumP);
+				double dLPoint, dRPoint;
+				i = iPeakPosApp - 1;
+				while (tmps.m_dMainSpectr[i] * tmps.m_dMainSpectr[i + 1] > 0) {
+					i -= 1;
+					if (i < iPeakPosApp - 1 - dRazrApp / 100.0 * iPeakPosApp / 2.355 * 3) {
+						dPeakPos = -1.0;
+						return dPeakPos;
+					}
+				}
+				if (tmps.m_dMainSpectr[i] == tmps.m_dMainSpectr[i + 1]) {
+					dLPoint = i;
+				}
+				else {
+					dLPoint = i + tmps.m_dMainSpectr[i] / (tmps.m_dMainSpectr[i] - tmps.m_dMainSpectr[i + 1]);
+				}
+				i = iPeakPosApp + 1;
+				while (tmps.m_dMainSpectr[i - 1] * tmps.m_dMainSpectr[i] > 0) {
+					i += 1;
+					if (i > iPeakPosApp + 1 + dRazrApp / 100.0 * iPeakPosApp / 2.355 * 3) {
+						dPeakPos = -1.0;
+						return dPeakPos;
+					}
+				}
+				if (tmps.m_dMainSpectr[i] == tmps.m_dMainSpectr[i - 1]) {
+					dRPoint = i;
+				}
+				else {
+					dRPoint = i - 1.0 + tmps.m_dMainSpectr[i - 1] / (tmps.m_dMainSpectr[i - 1] - tmps.m_dMainSpectr[i]);
+				}
+				dPeakPos = (dRPoint + dLPoint) / 2;
+				return dPeakPos;
+			}
+		}
+		public double PeakZhukov(double dPeakMayBe, double dWidthOnHalfHeight)
+		{
+			int iKMmax = (int) (Math.Sqrt(dPeakMayBe / 3.0) + 0.5), iLeftBorder, iRightBorder, i, iNumberPoints = 0, iLeftPoint = 0, iRightPoint = 0;
+			double dPeak = 0.0, dMin = 1.0;
+			double[] dD1;
+			double[] dD2;
+			dD1 = new double[SP_SIZE];
+			dD2 = new double[SP_SIZE];
+			iLeftBorder = (int) (dPeakMayBe - dWidthOnHalfHeight / 2);
+			iRightBorder = (int) (dPeakMayBe + dWidthOnHalfHeight / 2);
+			if (iKMmax < 10) { iKMmax = 10; }
+			for (int iKS = 4; iKS <= iKMmax; iKS++) {
+				double dL = 0.0, dR = 0.0;
+				for (i = 0; i < iKS; i++) {
+					dL += m_dMainSpectr[i];
+					dR += m_dMainSpectr[i + iKS + 1];
+				}
+				dD1[iKS] = dR - dL;
+				for (i = iKS + 1; i < (1023 - iKS); i++) {
+					dL += -m_dMainSpectr[i - iKS - 1] + m_dMainSpectr[i - 1];
+					dR += -m_dMainSpectr[i] + m_dMainSpectr[i + iKS];
+					dD1[i] = dR - dL;
+				}
+				dL = 0.0;	dR = 0.0;
+				for (i = 0; i < iKS; i++) {
+					dL += dD1[i];
+					dR += dD1[i + iKS + 1];
+				}
+				dD2[iKS] = dR - dL;
+				for (i = iKS + 1; i < (1023 - iKS); i++) {
+					dL += -dD1[i - iKS - 1] + dD1[i - 1];
+					dR += -dD1[i] + dD1[i + iKS];
+					dD2[i] = dR - dL;
+				}
+				dPeak = 0.0;	dMin = 1.0;
+				for (i = iLeftBorder; i <= iRightBorder; i++) {
+					if (dD2[i] < dMin) {
+						dMin = dD2[i];
+						dPeak = i;
+                    }
+				}
+				if (dPeak != 0) {
+					bool bContinue;
+					iLeftBorder = (int) (dPeak - dWidthOnHalfHeight / 2);
+					iRightBorder = (int) (dPeak + dWidthOnHalfHeight / 2);
+					do {
+						bContinue = false;
+						iNumberPoints = 0;
+						for (i = iLeftBorder; i <= iRightBorder; i++) {
+							if (dD2[i] == 0.0 || dD2[i + 1] == 0.0) { ++iNumberPoints; }
+							else
+								if (dD2[i] * dD2[i + 1] < 0) {
+									++iNumberPoints;
+									if (iNumberPoints == 1) { iLeftPoint = i; }
+									else { iRightPoint = i; }
+								}
+						}
+						switch (iNumberPoints) {
+							case 0:	iLeftBorder--;	iRightBorder++;	bContinue = true;	break;
+							case 1:	if ((iLeftPoint - iLeftBorder) > (iRightBorder - iLeftPoint)) { iLeftBorder--; } else iRightBorder++;	bContinue = true;	break;
+							case 2:	iKS = iKMmax;	break;
+						}
+					} while (bContinue);
+				}
+				else { iKS = iKMmax;	dPeak = 0.0; }
+			}
+			if (iNumberPoints != 2) { dPeak = 0.0; }
+			else {
+				if (dMin > -1.0) { dPeak = 0.0; }
+				else { dPeak = (iLeftPoint + dD2[iLeftPoint] / (dD2[iLeftPoint] - dD2[iLeftPoint + 1]) + iRightBorder + dD2[iRightBorder] / (dD2[iRightBorder] - dD2[iRightBorder + 1])) / 2; }
+			}
+			return dPeak;
+		}
+		public double Maximum(ref int iChannel, int iB = 0, int iE = SP_SIZE - 1, bool bReject = false)
+		{
+			double[] dS;
+			double dM = 0.0, dC;
+			int ib = 0, ie = 0;
+
+			iChannel = -1;
+			BeginEndCorrection(iB, iE, ref ib, ref ie);
+			if (bReject) { dS = m_dRejectSpectr; }
+			else { dS = m_dMainSpectr; }
+			for (int i = ib; i <= ie; i++) {
+				dC = dS[i];
+				if (dC > dM) {
+					dM = dC;
+					iChannel = i;
+				}
+			}
+			return dM;
+		}
+		public void Erase()
+		{
+			int i, iSize;
+			m_dCoeffA = 1.0;
+			m_dCoeffB = 0.0;
+			m_dTime = 0.0;
+			iSize = m_dMainSpectr.Length;
+			for (i = 0; i < iSize; i++) { m_dMainSpectr[i] = 0.0; }
+			iSize = m_dRejectSpectr.Length;
+			for (i = 0; i < iSize; i++) { m_dRejectSpectr[i] = 0.0; }
+		}
+		public CSpectr CutAndSmooth(double dCut, UInt16 wSmooth)
+		{
+			CSpectr csResult = new CSpectr(this);
+			double[] dS = new double[m_dMainSpectr.Length];
+			double dRealCut, dA, dV, dD;
+			UInt16 wS = (UInt16) ((wSmooth - 1) / 2);
+			dD = 2.0 * wS + 1;
+			int iC = 0;
+
+			dRealCut = Maximum(ref iC) * dCut;
+			for (int i = 0; i < m_dMainSpectr.Length; i++) { dS[i] = 0.0; }
+			if (wSmooth != 0) {
+				for (int i = wS; i < m_dMainSpectr.Length - wS - 1; i++) {
+					dA = 0.0;
+					for (int j = 0; j <= 2 * wS; j++) {
+						dV = m_dMainSpectr[i - wS + j];
+						if (dV < dRealCut) dV = 0.0;
+						dA += dV;
+					}
+					dS[i] = dA / dD;
+				}
+			}
+			else {
+				for (int i = 0; i < m_dMainSpectr.Length; i++) {
+					dV = m_dMainSpectr[i];
+					if (dV < dRealCut) dV = 0.0;
+					dS[i] = dV;
+				}
+			}
+			for (int i = 0; i < m_dMainSpectr.Length; i++) csResult.m_dMainSpectr[i] = dS[i];
+			return csResult;
+		}
+		public CSpectr SubstractSubstrate(int iB, int iE, int iW)
+		{
+			CSpectr		csResult = new CSpectr(this);
+			double[]	dS = new double[m_dMainSpectr.Length];
+			double		dYB, dYE, dA, dB, dY;
+
+			dYB = SummChanel(iB - iW + 1, iB) / iW;
+			dYE = SummChanel(iE, iE + iW - 1) / iW;
+			dA = (dYB - dYE) / (iB - iE);
+			dB = dYB - dA * iB;
+			for (int i = 0; i < m_dMainSpectr.Length; i++) { dS[i] = 0.0; }
+			for (int i = iB + 1; i < iE; i++) {
+				if (i >= 0 && i < m_dMainSpectr.Length) {
+					dY = m_dMainSpectr[i] - (dA * i + dB);
+					if (dY > 0.0) dS[i] = dY;
+				}
+			}
+			for (int i = 0; i < m_dMainSpectr.Length; i++) csResult.m_dMainSpectr[i] = dS[i];
+			return csResult;
+		}
+		public void CopyFrom(CSpectr csSpectr, double dCoeff)
+		{
+			m_dTime = csSpectr.m_dTime * dCoeff;
+			for (int i = 0; i < m_dMainSpectr.Length; i++) {
+				m_dMainSpectr[i] = csSpectr.m_dMainSpectr[i] * dCoeff;
+			}
+		}
+		public void Calibration(double dCh1, double dE1, double dCh2, double dE2)
+		{
+			double de1, de2;
+			if ((dCh1 != dCh2) && (dE1 != dE2)) {
+				if (((dE2 - dE1) * (dCh2 - dCh1)) < 0.0) {
+					de2 = dE1;
+					de1 = dE2;
+				}
+				else  {
+					de1 = dE1;
+					de2 = dE2;
+				}
+				m_dCoeffA = (de2 - de1) / (dCh2 - dCh1);
+				m_dCoeffB = de1 - m_dCoeffA * dCh1;
+			}
+		}
+		public double SummEnergy(double dB, double dE)
+		{
+			double	db = 0.0, de = 0.0, dbc, dec, dSumm = 0.0;
+			int		i, iB, iE;
+			BeginEndCorrection(dB, dE, ref db, ref de);
+			dbc = EnergyToChanel(db);
+			dec = EnergyToChanel(de);
+			iB = (int) Math.Ceiling(dbc);
+			iE = (int) Math.Floor(dec);
+			if (iE >= iB) {
+				if (iB > 0) { dSumm += m_dMainSpectr[iB - 1] * ((double)iB - dbc); }
+				for (i = iB; i < iE; i++) { dSumm += m_dMainSpectr[i]; }
+				dSumm += m_dMainSpectr[iE] * (dec - (double) iE);
+			}
+			else {
+				dSumm = m_dMainSpectr[iE] * (dec - dbc);
+			}
+			return dSumm;
+		}
+		public double Xi2(int iBegin, int iEnd, ref CSpectr csCompare)
+		{
+			double[] dCompare = new double[CSpectr.SP_SIZE];
+			double[] dOriginal = new double[CSpectr.SP_SIZE];
+			double dSummCompare = 0.0, dSummOriginal = 0.0, dXi2 = 0.0, dV;
+			int ib = 0, ie = 0;
+
+			BeginEndCorrection(iBegin, iEnd, ref ib, ref ie);
+			for (int i = ib; i <= ie; i++) {
+				dCompare[i] = csCompare.m_dMainSpectr[i];
+				dSummCompare += dCompare[i];
+				dOriginal[i] = m_dMainSpectr[i];
+				dSummOriginal += dOriginal[i];
+			}
+			if (dSummCompare != 0.0) {
+				for (int i = ib; i <= ie; i++) {
+					dCompare[i] /= dSummCompare;
+				}
+			}
+			if (dSummOriginal != 0.0) {
+				for (int i = ib; i <= ie; i++) {
+					dOriginal[i] /= dSummOriginal;
+				}
+			}
+			for (int i = ib; i <= ie; i++) {
+				if (dCompare[i] != 0.0) {
+					dV = (dOriginal[i] - dCompare[i]) / dCompare[i];
+					dXi2 += dV * dV;
+				}
+			}
+			return dXi2;
+		}
+	}
