@@ -1,37 +1,35 @@
-import { MultiSelect, Stack, Text } from "@mantine/core";
+import { Select } from "@mantine/core";
 import type { DetectorSpectrum } from "../../types/spectrum";
 
 interface DetectorSelectorProps {
+  label: string;
+  description: string;
   detectors: DetectorSpectrum[];
-  value: string[];
-  onChange: (value: string[]) => void;
+  value: string | null;
+  onChange: (value: string | null) => void;
 }
 
 export function DetectorSelector({
+  label,
+  description,
   detectors,
   value,
   onChange,
 }: DetectorSelectorProps) {
   return (
-    <Stack gap="xs">
-      <Text fw={600} size="sm">
-        Детекторы
-      </Text>
-      <MultiSelect
-        data={detectors.map((detector) => ({
-          value: detector.detectorId,
-          label: detector.name,
-        }))}
-        value={value}
-        onChange={onChange}
-        searchable
-        clearable={false}
-        placeholder="Выберите детекторы"
-        nothingFoundMessage="Нет детекторов"
-      />
-      <Text size="xs" c="dimmed">
-        При мультивыборе каналы усредняются перед preprocessing и поиском ROI.
-      </Text>
-    </Stack>
+    <Select
+      label={label}
+      description={description}
+      data={detectors.map((detector) => ({
+        value: detector.detectorId,
+        label: detector.name,
+      }))}
+      value={value}
+      onChange={onChange}
+      searchable
+      allowDeselect={false}
+      placeholder="Выберите детектор"
+      nothingFoundMessage="Нет детекторов"
+    />
   );
 }

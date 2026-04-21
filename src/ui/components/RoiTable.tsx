@@ -1,11 +1,4 @@
-import {
-  Badge,
-  Card,
-  Group,
-  ScrollArea,
-  Table,
-  Text,
-} from "@mantine/core";
+import { Card, ScrollArea, Table, Text, Title } from "@mantine/core";
 import type { ROI } from "../../types/spectrum";
 
 interface RoiTableProps {
@@ -16,28 +9,24 @@ interface RoiTableProps {
 
 export function RoiTable({ rois, selectedRoiId, onSelect }: RoiTableProps) {
   return (
-    <Card withBorder radius="lg" padding="lg" h="100%">
-      <Group justify="space-between" mb="md">
-        <div>
-          <Text fw={700}>Найденные ROI</Text>
-          <Text size="sm" c="dimmed">
-            Канальные границы и score для последующего МНК.
-          </Text>
-        </div>
-        <Badge variant="light" color="blue">
-          {rois.length}
-        </Badge>
-      </Group>
+    <Card withBorder h="100%">
+      <Title order={5} mb="xs">
+        Список ROI
+      </Title>
+      <Text size="sm" c="dimmed" mb="md">
+        Найдено: {rois.length}
+      </Text>
+
       <ScrollArea h={420}>
         <Table striped highlightOnHover stickyHeader>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>ROI</Table.Th>
-              <Table.Th>Start</Table.Th>
-              <Table.Th>End</Table.Th>
-              <Table.Th>Center</Table.Th>
-              <Table.Th>Width</Table.Th>
-              <Table.Th>Score</Table.Th>
+              <Table.Th>Начало</Table.Th>
+              <Table.Th>Конец</Table.Th>
+              <Table.Th>Ширина</Table.Th>
+              <Table.Th>Информация</Table.Th>
+              <Table.Th>Доля</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -45,27 +34,27 @@ export function RoiTable({ rois, selectedRoiId, onSelect }: RoiTableProps) {
               <Table.Tr>
                 <Table.Td colSpan={6}>
                   <Text size="sm" c="dimmed">
-                    ROI пока не найдены.
+                    ROI не найдены.
                   </Text>
                 </Table.Td>
               </Table.Tr>
             ) : (
               rois.map((roi) => {
                 const selected = roi.id === selectedRoiId;
+
                 return (
                   <Table.Tr
                     key={roi.id}
-                    bg={selected ? "blue.0" : undefined}
+                    bg={selected ? "var(--mantine-color-gray-1)" : undefined}
                     onMouseEnter={() => onSelect(roi.id)}
                     onMouseLeave={() => onSelect(null)}
-                    style={{ cursor: "pointer" }}
                   >
                     <Table.Td>{roi.id}</Table.Td>
                     <Table.Td>{roi.startChannel}</Table.Td>
                     <Table.Td>{roi.endChannel}</Table.Td>
-                    <Table.Td>{roi.peakChannel.toFixed(2)}</Table.Td>
                     <Table.Td>{roi.width}</Table.Td>
-                    <Table.Td>{roi.score.toFixed(4)}</Table.Td>
+                    <Table.Td>{roi.information.toFixed(6)}</Table.Td>
+                    <Table.Td>{(roi.informationFraction * 100).toFixed(2)}%</Table.Td>
                   </Table.Tr>
                 );
               })

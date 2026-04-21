@@ -1,10 +1,4 @@
-import {
-  NumberInput,
-  SegmentedControl,
-  Stack,
-  Switch,
-  Text,
-} from "@mantine/core";
+import { NumberInput, Stack, Switch } from "@mantine/core";
 import type { PreprocessingSettings } from "../../types/spectrum";
 
 interface ProcessingSettingsPanelProps {
@@ -18,9 +12,6 @@ export function ProcessingSettingsPanel({
 }: ProcessingSettingsPanelProps) {
   return (
     <Stack gap="sm">
-      <Text fw={600} size="sm">
-        Preprocessing
-      </Text>
       <NumberInput
         label="Окно сглаживания"
         min={3}
@@ -35,7 +26,7 @@ export function ProcessingSettingsPanel({
         }
       />
       <Switch
-        label="Baseline correction"
+        label="Коррекция baseline"
         checked={value.useBaselineCorrection}
         onChange={(event) =>
           onChange({
@@ -57,24 +48,6 @@ export function ProcessingSettingsPanel({
           })
         }
       />
-      <Stack gap={6}>
-        <Text size="sm" fw={500}>
-          Нормализация
-        </Text>
-        <SegmentedControl
-          data={[
-            { label: "None", value: "none" },
-            { label: "Sum", value: "sum" },
-          ]}
-          value={value.normalizationMode}
-          onChange={(next) =>
-            onChange({
-              ...value,
-              normalizationMode: next as PreprocessingSettings["normalizationMode"],
-            })
-          }
-        />
-      </Stack>
     </Stack>
   );
 }

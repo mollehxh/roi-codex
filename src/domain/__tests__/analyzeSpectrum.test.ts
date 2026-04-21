@@ -7,11 +7,17 @@ import {
   type DetectorSpectrum,
 } from "../../types/spectrum";
 
-function buildSyntheticDetector(detectorId: string): DetectorSpectrum {
+function buildSyntheticDetector(
+  detectorId: string,
+  peakChannels: [number, number] = [220, 612],
+): DetectorSpectrum {
+  const [firstPeakChannel, secondPeakChannel] = peakChannels;
   const channels = Array.from({ length: 1024 }, (_, index) => {
     const noise = 4 + Math.sin(index / 40) * 0.6;
-    const firstPeak = 130 * Math.exp(-((index - 220) ** 2) / (2 * 11 ** 2));
-    const secondPeak = 115 * Math.exp(-((index - 612) ** 2) / (2 * 15 ** 2));
+    const firstPeak =
+      130 * Math.exp(-((index - firstPeakChannel) ** 2) / (2 * 11 ** 2));
+    const secondPeak =
+      115 * Math.exp(-((index - secondPeakChannel) ** 2) / (2 * 15 ** 2));
     return noise + firstPeak + secondPeak;
   });
 
@@ -39,6 +45,7 @@ describe("analyzeSpectrum", () => {
     const analysis = analyzeSpectrum({
       detectors: [detector],
       selectedDetectorIds: [detector.detectorId],
+      analysisMode: "single",
       aggregationMode: "mean",
       preprocessingSettings: DEFAULT_PREPROCESSING_SETTINGS,
       peakDetectionSettings: DEFAULT_PEAK_DETECTION_SETTINGS,
@@ -64,6 +71,7 @@ describe("analyzeSpectrum", () => {
     const analysis = analyzeSpectrum({
       detectors: [detectorA, detectorB],
       selectedDetectorIds: [detectorA.detectorId, detectorB.detectorId],
+      analysisMode: "single",
       aggregationMode: "mean",
       preprocessingSettings: DEFAULT_PREPROCESSING_SETTINGS,
       peakDetectionSettings: DEFAULT_PEAK_DETECTION_SETTINGS,
@@ -84,6 +92,7 @@ describe("analyzeSpectrum", () => {
     const analysis = analyzeSpectrum({
       detectors: [flatDetector],
       selectedDetectorIds: [flatDetector.detectorId],
+      analysisMode: "single",
       aggregationMode: "mean",
       preprocessingSettings: DEFAULT_PREPROCESSING_SETTINGS,
       peakDetectionSettings: {
@@ -109,6 +118,7 @@ describe("analyzeSpectrum", () => {
     const analysis = analyzeSpectrum({
       detectors: [detector],
       selectedDetectorIds: [detector.detectorId],
+      analysisMode: "single",
       aggregationMode: "mean",
       preprocessingSettings: DEFAULT_PREPROCESSING_SETTINGS,
       peakDetectionSettings: {

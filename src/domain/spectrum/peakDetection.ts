@@ -1,9 +1,16 @@
 import { energyFromChannel } from "../../shared/spc/parseSpcFile";
 import type {
+  EnergyCalibration,
   Peak,
+  PeakSelectionMode,
   PeakDetectionSettings,
   ProcessedSpectrum,
 } from "../../types/spectrum";
+
+interface AutoPeakDetectionResult {
+  calibration: EnergyCalibration;
+  peaks: Peak[];
+}
 
 interface PeakCandidate {
   channel: number;
@@ -12,15 +19,17 @@ interface PeakCandidate {
   widthHint: number;
 }
 
+const MAX_REFINEMENT_ATTEMPTS = 6;
+
 function applyDerivative(signal: number[], window: number) {
   const derivativeWindow = Math.max(1, Math.round(window));
   const result = new Array<number>(signal.length).fill(0);
 
-  for (let index = derivativeWindow; index < signal.length - derivativeWindow; index += 1) {
+  for (let index = derivativeWindow; index <= signal.length - 1 - derivativeWindow; index += 1) {
     let left = 0;
     let right = 0;
 
-    for (let cursor = 0; cursor < derivativeWindow; cursor += 1) {
+    for (let cursor = 0; cursor <= derivativeWindow - 1; cursor += 1) {
       left += signal[index - cursor - 1];
       right += signal[index + cursor + 1];
     }
@@ -30,8 +39,8 @@ function applyDerivative(signal: number[], window: number) {
     result[index] = (right - left) / (derivativeWindow + 1);
   }
 
-  for (let index = 0; index < derivativeWindow; index += 1) {
-    result[index] = (signal[Math.min(signal.length - 1, index + 1)] - signal[index]) / 2;
+  for (let index = 0; index <= derivativeWindow - 1 && index < signal.length - 1; index += 1) {
+    result[index] = (signal[index + 1] - signal[index]) / 2;
   }
 
   for (
@@ -58,6 +67,34 @@ function adaptiveDerivativeWindow(channel: number) {
   );
 }
 
+function estimateSearchHalfRange(channel: number, detectorResolutionPercent: number) {
+  const safeChannel = Math.max(1, Math.round(channel));
+  const scaledResolution =
+    detectorResolutionPercent * Math.sqrt(175.0 / safeChannel);
+
+  return Math.max(
+    1,
+    Math.round((scaledResolution / 100.0) * safeChannel / 2.0),
+  );
+}
+
+function estimateProminence(signal: number[], index: number, radius: number) {
+  const leftBound = Math.max(0, index - radius);
+  const rightBound = Math.min(signal.length - 1, index + radius);
+  let leftMinimum = signal[index] ?? 0;
+  let rightMinimum = signal[index] ?? 0;
+
+  for (let cursor = leftBound; cursor <= index; cursor += 1) {
+    leftMinimum = Math.min(leftMinimum, signal[cursor] ?? leftMinimum);
+  }
+
+  for (let cursor = index; cursor <= rightBound; cursor += 1) {
+    rightMinimum = Math.min(rightMinimum, signal[cursor] ?? rightMinimum);
+  }
+
+  return (signal[index] ?? 0) - Math.max(leftMinimum, rightMinimum);
+}
+
 function estimateWidthHint(
   signal: number[],
   index: number,
@@ -68,36 +105,118 @@ function estimateWidthHint(
   const fromResolution = Math.round(
     (detectorResolutionPercent * Math.sqrt(175 / channel) * channel) / 200,
   );
-  const halfHeight = signal[index] * 0.5;
+  const halfHeight = (signal[index] ?? 0) * 0.5;
   let left = index;
   let right = index;
 
-  while (left > 0 && signal[left] >= halfHeight) {
+  while (left > 0 && (signal[left] ?? 0) >= halfHeight) {
     left -= 1;
   }
 
-  while (right < signal.length - 1 && signal[right] >= halfHeight) {
+  while (right < signal.length - 1 && (signal[right] ?? 0) >= halfHeight) {
     right += 1;
   }
 
   return Math.max(4, Math.min(defaultRadius, Math.max(fromResolution, right - left)));
 }
 
-function estimateProminence(signal: number[], index: number, radius: number) {
-  const leftBound = Math.max(0, index - radius);
-  const rightBound = Math.min(signal.length - 1, index + radius);
-  let leftMinimum = signal[index];
-  let rightMinimum = signal[index];
-
-  for (let cursor = leftBound; cursor <= index; cursor += 1) {
-    leftMinimum = Math.min(leftMinimum, signal[cursor]);
+function peakPositionExact(
+  signal: number[],
+  approximateChannel: number,
+  detectorResolutionPercent: number,
+  searchHalfRange: number,
+) {
+  if (approximateChannel < 1 || approximateChannel > signal.length - 2) {
+    return -1;
   }
 
-  for (let cursor = index; cursor <= rightBound; cursor += 1) {
-    rightMinimum = Math.min(rightMinimum, signal[cursor]);
+  let halfSearch = Math.max(1, searchHalfRange);
+  let derivativeWindow = adaptiveDerivativeWindow(approximateChannel);
+  let peakChannel = approximateChannel;
+  let maximum = 0;
+
+  for (let index = approximateChannel - halfSearch; index <= approximateChannel + halfSearch; index += 1) {
+    const safeIndex = Math.max(0, Math.min(signal.length - 1, index));
+    if ((signal[safeIndex] ?? 0) > maximum) {
+      maximum = signal[safeIndex] ?? 0;
+      peakChannel = safeIndex;
+    }
   }
 
-  return signal[index] - Math.max(leftMinimum, rightMinimum);
+  const scaledResolution =
+    detectorResolutionPercent * Math.sqrt(175.0 / Math.max(1, peakChannel));
+  halfSearch = Math.max(
+    1,
+    Math.round((scaledResolution / 100.0) * peakChannel / 2.0),
+  );
+
+  let secondDerivative = [...signal];
+  let crossingsCount = 0;
+  let attempts = 0;
+
+  do {
+    secondDerivative = applyDerivative(applyDerivative(signal, derivativeWindow), derivativeWindow);
+    crossingsCount = -1;
+
+    for (let index = peakChannel - halfSearch; index <= peakChannel + halfSearch; index += 1) {
+      const safeIndex = Math.max(0, Math.min(signal.length - 2, index));
+      if ((secondDerivative[safeIndex] ?? 0) * (secondDerivative[safeIndex + 1] ?? 0) < 0) {
+        crossingsCount += 1;
+      }
+    }
+
+    derivativeWindow += 1;
+    attempts += 1;
+
+    if (attempts === MAX_REFINEMENT_ATTEMPTS && crossingsCount > 1) {
+      return -1;
+    }
+  } while (crossingsCount > 1 && attempts < MAX_REFINEMENT_ATTEMPTS);
+
+  let leftIndex = peakChannel - 1;
+  const leftLimit =
+    peakChannel - 1 - (scaledResolution / 100.0) * peakChannel / 2.355 * 3;
+
+  while (
+    leftIndex > 0 &&
+    (secondDerivative[leftIndex] ?? 0) * (secondDerivative[leftIndex + 1] ?? 0) > 0
+  ) {
+    leftIndex -= 1;
+    if (leftIndex < leftLimit) {
+      return -1;
+    }
+  }
+
+  const leftPoint =
+    secondDerivative[leftIndex] === secondDerivative[leftIndex + 1]
+      ? leftIndex
+      : leftIndex +
+        (secondDerivative[leftIndex] ?? 0) /
+          ((secondDerivative[leftIndex] ?? 0) - (secondDerivative[leftIndex + 1] ?? 0));
+
+  let rightIndex = peakChannel + 1;
+  const rightLimit =
+    peakChannel + 1 + (scaledResolution / 100.0) * peakChannel / 2.355 * 3;
+
+  while (
+    rightIndex < signal.length - 1 &&
+    (secondDerivative[rightIndex - 1] ?? 0) * (secondDerivative[rightIndex] ?? 0) > 0
+  ) {
+    rightIndex += 1;
+    if (rightIndex > rightLimit || rightIndex >= signal.length - 1) {
+      return -1;
+    }
+  }
+
+  const rightPoint =
+    secondDerivative[rightIndex] === secondDerivative[rightIndex - 1]
+      ? rightIndex
+      : rightIndex -
+        1.0 +
+        (secondDerivative[rightIndex - 1] ?? 0) /
+          ((secondDerivative[rightIndex - 1] ?? 0) - (secondDerivative[rightIndex] ?? 0));
+
+  return (rightPoint + leftPoint) / 2;
 }
 
 function refinePeakChannel(
@@ -105,66 +224,24 @@ function refinePeakChannel(
   candidateChannel: number,
   settings: PeakDetectionSettings,
 ) {
-  const localLeft = Math.max(0, candidateChannel - settings.refinementRadius);
-  const localRight = Math.min(signal.length - 1, candidateChannel + settings.refinementRadius);
-  let roughPeak = candidateChannel;
-
-  for (let index = localLeft; index <= localRight; index += 1) {
-    if (signal[index] > signal[roughPeak]) {
-      roughPeak = index;
-    }
-  }
-
-  let derivativeWindow = adaptiveDerivativeWindow(roughPeak);
   const widthHint = estimateWidthHint(
     signal,
-    roughPeak,
+    candidateChannel,
     settings.refinementRadius * 3,
     settings.detectorResolutionPercent,
   );
-
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    const firstDerivative = applyDerivative(signal, derivativeWindow);
-    const secondDerivative = applyDerivative(firstDerivative, derivativeWindow);
-    const searchLeft = Math.max(1, roughPeak - widthHint);
-    const searchRight = Math.min(signal.length - 2, roughPeak + widthHint);
-    const crossings: number[] = [];
-
-    for (let index = searchLeft; index <= searchRight; index += 1) {
-      const current = secondDerivative[index];
-      const next = secondDerivative[index + 1];
-
-      if (current === 0 || current * next < 0) {
-        const crossing =
-          current === next ? index : index + current / (current - next);
-        crossings.push(crossing);
-      }
-    }
-
-    const leftCrossing = [...crossings]
-      .filter((crossing) => crossing < roughPeak)
-      .sort((left, right) => right - left)[0];
-    const rightCrossing = [...crossings]
-      .filter((crossing) => crossing > roughPeak)
-      .sort((left, right) => left - right)[0];
-
-    if (
-      leftCrossing !== undefined &&
-      rightCrossing !== undefined &&
-      crossings.length >= 2 &&
-      crossings.length <= 4
-    ) {
-      return {
-        refinedChannel: (leftCrossing + rightCrossing) / 2,
-        widthHint,
-      };
-    }
-
-    derivativeWindow += 1;
-  }
+  const refinedChannel = peakPositionExact(
+    signal,
+    candidateChannel,
+    settings.detectorResolutionPercent,
+    Math.max(
+      settings.refinementRadius,
+      estimateSearchHalfRange(candidateChannel, settings.detectorResolutionPercent),
+    ),
+  );
 
   return {
-    refinedChannel: roughPeak,
+    refinedChannel: refinedChannel > 0 ? refinedChannel : candidateChannel,
     widthHint,
   };
 }
@@ -172,10 +249,10 @@ function refinePeakChannel(
 export function detectPeaks(
   processed: ProcessedSpectrum,
   settings: PeakDetectionSettings,
-  calibration: { slope: number; intercept: number },
-): Peak[] {
+  calibration: EnergyCalibration,
+): AutoPeakDetectionResult {
   const signal = processed.normalized;
-  const refinementSignal = processed.corrected;
+  const refinementSignal = processed.raw;
   const maxValue = Math.max(...signal, 0);
   const candidates: PeakCandidate[] = [];
   const searchMargin = Math.max(4, Math.floor(settings.minDistance / 2));
@@ -185,9 +262,9 @@ export function detectPeaks(
     index < signal.length - 1 - searchMargin;
     index += 1
   ) {
-    const value = signal[index];
+    const value = signal[index] ?? 0;
 
-    if (value <= signal[index - 1] || value <= signal[index + 1]) {
+    if (value <= (signal[index - 1] ?? value) || value <= (signal[index + 1] ?? value)) {
       continue;
     }
 
@@ -203,7 +280,7 @@ export function detectPeaks(
 
     candidates.push({
       channel: index,
-      value: refinementSignal[index],
+      value: refinementSignal[index] ?? 0,
       prominence,
       widthHint: estimateWidthHint(
         refinementSignal,
@@ -262,17 +339,55 @@ export function detectPeaks(
     })
     .sort((left, right) => left.refinedChannel - right.refinedChannel);
 
-  return deduplicatedPeaks.map((candidate, index) => ({
-    id: `peak-${index + 1}`,
-    channel: candidate.channel,
-    refinedChannel: candidate.refinedChannel,
-    value: candidate.value,
-    prominence: candidate.prominence,
-    widthHint: candidate.widthHint,
-    energy: energyFromChannel(
-      candidate.refinedChannel,
-      calibration.slope,
-      calibration.intercept,
-    ),
-  }));
+  return {
+    calibration,
+    peaks: deduplicatedPeaks.map((candidate, index) => ({
+      id: `peak-${index + 1}`,
+      channel: candidate.channel,
+      refinedChannel: candidate.refinedChannel,
+      value: candidate.value,
+      prominence: candidate.prominence,
+      widthHint: candidate.widthHint,
+      energy: energyFromChannel(
+        candidate.refinedChannel,
+        calibration.slope,
+        calibration.intercept,
+      ),
+      source: "auto",
+    })),
+  };
+}
+
+export function buildPeaksFromChannels(
+  processed: ProcessedSpectrum,
+  channels: number[],
+  settings: PeakDetectionSettings,
+  calibration: EnergyCalibration,
+  source: PeakSelectionMode,
+): Peak[] {
+  const signal = processed.normalized;
+  const refinementSignal = processed.raw;
+  const uniqueChannels = [...new Set(channels.map((channel) => Math.round(channel)))]
+    .filter((channel) => channel >= 0 && channel < signal.length)
+    .sort((left, right) => left - right);
+
+  return uniqueChannels.map((channel, index) => {
+    const prominence = estimateProminence(signal, channel, settings.refinementRadius * 2);
+    const refined = refinePeakChannel(refinementSignal, channel, settings);
+
+    return {
+      id: `peak-${index + 1}`,
+      channel,
+      refinedChannel: refined.refinedChannel,
+      value: refinementSignal[channel] ?? 0,
+      prominence,
+      widthHint: refined.widthHint,
+      energy: energyFromChannel(
+        refined.refinedChannel,
+        calibration.slope,
+        calibration.intercept,
+      ),
+      source,
+    };
+  });
 }

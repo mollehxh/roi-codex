@@ -5,61 +5,50 @@ interface SummaryStatsProps {
   analysis: SpectrumAnalysisResult;
 }
 
-function StatCard({
-  label,
-  value,
-  helper,
-}: {
-  label: string;
-  value: string;
-  helper: string;
-}) {
-  return (
-    <Card radius="md" withBorder padding="md">
-      <Stack gap={2}>
-        <Text size="xs" tt="uppercase" c="dimmed" fw={700}>
-          {label}
-        </Text>
-        <Text size="xl" fw={700}>
-          {value}
-        </Text>
-        <Text size="xs" c="dimmed">
-          {helper}
-        </Text>
-      </Stack>
-    </Card>
-  );
-}
-
 export function SummaryStats({ analysis }: SummaryStatsProps) {
   const maxValue = Math.max(...analysis.processed.corrected, 0);
-  const totalCounts = analysis.aggregated.channels.reduce(
-    (accumulator, value) => accumulator + value,
-    0,
-  );
 
   return (
-    <SimpleGrid cols={{ base: 1, sm: 2, xl: 4 }}>
-      <StatCard
-        label="Активные детекторы"
-        value={String(analysis.aggregated.detectorIds.length)}
-        helper="Используются в текущем агрегированном спектре"
-      />
-      <StatCard
-        label="Найдено пиков"
-        value={String(analysis.peaks.length)}
-        helper="После preprocessing и peak refinement"
-      />
-      <StatCard
-        label="Найдено ROI"
-        value={String(analysis.rois.length)}
-        helper="Границы отфильтрованы по score и пересечениям"
-      />
-      <StatCard
-        label="Максимум сигнала"
-        value={maxValue.toFixed(2)}
-        helper={`Суммарные counts: ${totalCounts.toFixed(1)}`}
-      />
+    <SimpleGrid cols={{ base: 1, sm: 2, xl: 3 }}>
+      <Card withBorder>
+        <Stack gap={2}>
+          <Text size="sm" c="dimmed">
+            Авто пики
+          </Text>
+          <Text fw={700} size="xl">
+            {analysis.suggestedPeaks.length}
+          </Text>
+          <Text size="sm" c="dimmed">
+            Найдены алгоритмом
+          </Text>
+        </Stack>
+      </Card>
+      <Card withBorder>
+        <Stack gap={2}>
+          <Text size="sm" c="dimmed">
+            Пики / ROI
+          </Text>
+          <Text fw={700} size="xl">
+            {analysis.peaks.length} / {analysis.rois.length}
+          </Text>
+          <Text size="sm" c="dimmed">
+            После текущего анализа
+          </Text>
+        </Stack>
+      </Card>
+      <Card withBorder>
+        <Stack gap={2}>
+          <Text size="sm" c="dimmed">
+            Максимум сигнала
+          </Text>
+          <Text fw={700} size="xl">
+            {maxValue.toFixed(2)}
+          </Text>
+          <Text size="sm" c="dimmed">
+            Суммарная информация: {analysis.comparison?.totalInformation.toFixed(4) ?? "0.0000"}
+          </Text>
+        </Stack>
+      </Card>
     </SimpleGrid>
   );
 }

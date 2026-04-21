@@ -3,8 +3,12 @@ import type {
   SpectrumHeader,
 } from "../../информация для разработки/spc-parser";
 
+export type { EnergyCalibration, SpectrumHeader };
+
 export type AggregationMode = "mean";
 export type NormalizationMode = "none" | "sum";
+export type AnalysisMode = "single" | "comparison";
+export type PeakSelectionMode = "auto" | "manual";
 
 export interface DetectorSpectrum {
   detectorId: string;
@@ -42,6 +46,7 @@ export interface PeakDetectionSettings {
   minDistance: number;
   refinementRadius: number;
   detectorResolutionPercent: number;
+  fullScaleMeV: number;
 }
 
 export interface RoiDetectionSettings {
@@ -49,6 +54,10 @@ export interface RoiDetectionSettings {
   minRoiWidth: number;
   degradationTolerance: number;
   maxWeakSteps: number;
+  growthStabilityWindow: number;
+  growthStabilityThreshold: number;
+  relativeInfoGrowthThreshold: number;
+  maxGrowthSteps: number;
   scoreWeights: {
     kl: number;
     fisher: number;
@@ -68,6 +77,7 @@ export interface Peak {
   prominence: number;
   widthHint: number;
   energy: number;
+  source: PeakSelectionMode;
 }
 
 export interface ROI {
@@ -79,8 +89,18 @@ export interface ROI {
   score: number;
   klScore: number;
   fisherScore: number;
+  information: number;
+  informationFraction: number;
   detectorIds: string[];
   peakId: string;
+}
+
+export interface ComparisonSpectrum {
+  source: AggregatedSpectrum;
+  background: AggregatedSpectrum;
+  difference: AggregatedSpectrum;
+  infoPerChannel: number[];
+  totalInformation: number;
 }
 
 export interface ProcessedSpectrum {
@@ -94,8 +114,10 @@ export interface ProcessedSpectrum {
 export interface SpectrumAnalysisResult {
   aggregated: AggregatedSpectrum;
   processed: ProcessedSpectrum;
+  suggestedPeaks: Peak[];
   peaks: Peak[];
   rois: ROI[];
+  comparison: ComparisonSpectrum | null;
 }
 
 export const DEFAULT_PREPROCESSING_SETTINGS: PreprocessingSettings = {
@@ -110,7 +132,8 @@ export const DEFAULT_PEAK_DETECTION_SETTINGS: PeakDetectionSettings = {
   minProminence: 0.004,
   minDistance: 12,
   refinementRadius: 18,
-  detectorResolutionPercent: 8,
+  detectorResolutionPercent: 1,
+  fullScaleMeV: 12,
 };
 
 export const DEFAULT_ROI_DETECTION_SETTINGS: RoiDetectionSettings = {
@@ -118,6 +141,10 @@ export const DEFAULT_ROI_DETECTION_SETTINGS: RoiDetectionSettings = {
   minRoiWidth: 5,
   degradationTolerance: 0.1,
   maxWeakSteps: 1,
+  growthStabilityWindow: 5,
+  growthStabilityThreshold: 0.01,
+  relativeInfoGrowthThreshold: 0.01,
+  maxGrowthSteps: 200,
   scoreWeights: {
     kl: 0.6,
     fisher: 0.4,
