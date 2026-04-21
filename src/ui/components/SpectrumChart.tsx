@@ -13,7 +13,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { ComparisonSpectrum, Peak, ROI } from "../../types/spectrum";
+import type {
+  ComparisonSpectrum,
+  MultiSpectrumComparison,
+  Peak,
+  ROI,
+} from "../../types/spectrum";
 
 interface SpectrumChartProps {
   rawChannels: number[];
@@ -21,6 +26,7 @@ interface SpectrumChartProps {
   peaks: Peak[];
   rois: ROI[];
   comparison: ComparisonSpectrum | null;
+  multiComparison: MultiSpectrumComparison | null;
   showPeaks: boolean;
   showRoi: boolean;
   selectedRoiId: string | null;
@@ -31,27 +37,51 @@ interface ZoomRange {
   endIndex: number;
 }
 
+const SOURCE_COLORS = [
+  "#228be6",
+  "#2f9e44",
+  "#e8590c",
+  "#ae3ec9",
+  "#0ca678",
+  "#c92a2a",
+];
+
 export function SpectrumChart({
   rawChannels,
   displayChannels,
   peaks,
   rois,
   comparison,
+  multiComparison,
   showPeaks,
   showRoi,
   selectedRoiId,
 }: SpectrumChartProps) {
+  const visibleSources = useMemo(
+    () => multiComparison?.sources.slice(0, 6) ?? [],
+    [multiComparison],
+  );
   const data = useMemo(
     () =>
-      displayChannels.map((value, index) => ({
-        channel: index,
-        source: comparison?.source.channels[index] ?? null,
-        background: comparison?.background.channels[index] ?? null,
-        difference:
-          comparison?.difference.channels[index] ?? rawChannels[index] ?? null,
-        processed: value,
-      })),
-    [comparison, displayChannels, rawChannels],
+      displayChannels.map((value, index) => {
+        const row: Record<string, number | null> = {
+          channel: index,
+          source: comparison?.source.channels[index] ?? null,
+          background: comparison?.background.channels[index] ?? null,
+          difference: multiComparison
+            ? null
+            : comparison?.difference.channels[index] ?? rawChannels[index] ?? null,
+          processed: multiComparison ? null : value,
+        };
+
+        visibleSources.forEach((source, sourceIndex) => {
+          row[`source-${sourceIndex + 1}`] =
+            source.spectrum.channels[index] ?? null;
+        });
+
+        return row;
+      }),
+    [comparison, displayChannels, multiComparison, rawChannels, visibleSources],
   );
 
   const [zoomRange, setZoomRange] = useState<ZoomRange>({
@@ -73,8 +103,8 @@ export function SpectrumChart({
           <div>
             <Title order={5}>Спектр</Title>
             <Text size="sm" c="dimmed">
-              Источник, фон, разность и обработанный сигнал. ROI подсвечиваются
-              цветом, диапазон можно масштабировать.
+              Спектры и фон. ROI подсвечиваются цветом, диапазон можно
+              масштабировать.
             </Text>
           </div>
           <Button
@@ -140,15 +170,31 @@ export function SpectrumChart({
                   ))
                 : null}
 
-              <Line
-                type="monotone"
-                dataKey="source"
-                name="Источник"
-                stroke="#228be6"
-                dot={false}
-                strokeWidth={1.5}
-                isAnimationActive={false}
-              />
+              {multiComparison
+                ? visibleSources.map((source, index) => (
+                    <Line
+                      key={source.id}
+                      type="monotone"
+                      dataKey={`source-${index + 1}`}
+                      name={source.name}
+                      stroke={SOURCE_COLORS[index]}
+                      dot={false}
+                      strokeWidth={1.2}
+                      strokeOpacity={0.75}
+                      isAnimationActive={false}
+                    />
+                  ))
+                : (
+                    <Line
+                      type="monotone"
+                      dataKey="source"
+                      name="Источник"
+                      stroke="#228be6"
+                      dot={false}
+                      strokeWidth={1.5}
+                      isAnimationActive={false}
+                    />
+                  )}
               <Line
                 type="monotone"
                 dataKey="background"
@@ -158,24 +204,28 @@ export function SpectrumChart({
                 strokeWidth={1.5}
                 isAnimationActive={false}
               />
-              <Line
-                type="monotone"
-                dataKey="difference"
-                name="Разность"
-                stroke="#f08c00"
-                dot={false}
-                strokeWidth={1.5}
-                isAnimationActive={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="processed"
-                name="Обработанный"
-                stroke="#1971c2"
-                dot={false}
-                strokeWidth={2}
-                isAnimationActive={false}
-              />
+              {!multiComparison ? (
+                <>
+                  <Line
+                    type="monotone"
+                    dataKey="difference"
+                    name="Разность"
+                    stroke="#f08c00"
+                    dot={false}
+                    strokeWidth={1.5}
+                    isAnimationActive={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="processed"
+                    name="Обработанный"
+                    stroke="#1971c2"
+                    dot={false}
+                    strokeWidth={2}
+                    isAnimationActive={false}
+                  />
+                </>
+              ) : null}
 
               <Brush
                 dataKey="channel"

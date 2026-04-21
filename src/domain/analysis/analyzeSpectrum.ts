@@ -121,5 +121,6 @@ export function analyzeSpectrum({
     peaks,
     rois,
     comparison,
+    multiComparison: null,
   };
 }

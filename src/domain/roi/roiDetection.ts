@@ -196,6 +196,162 @@ function buildLocalWindow(
   };
 }
 
+function normalizeWindowSize(value: number) {
+  return Math.max(3, Math.min(5, Math.round(value)));
+}
+
+function averageRange(
+  values: number[],
+  startChannel: number,
+  endChannel: number,
+) {
+  let sum = 0;
+  let count = 0;
+
+  for (let channel = startChannel; channel <= endChannel; channel += 1) {
+    sum += Math.max(0, values[channel] ?? 0);
+    count += 1;
+  }
+
+  return count > 0 ? sum / count : 0;
+}
+
+function averageCenteredWindow(
+  values: number[],
+  centerChannel: number,
+  windowSize: number,
+  minChannel: number,
+  maxChannel: number,
+) {
+  const leftSize = Math.floor((windowSize - 1) / 2);
+  const rightSize = windowSize - 1 - leftSize;
+  const startChannel = Math.max(minChannel, centerChannel - leftSize);
+  const endChannel = Math.min(maxChannel, centerChannel + rightSize);
+
+  return averageRange(values, startChannel, endChannel);
+}
+
+function averageDirectionalWindow(
+  values: number[],
+  edgeChannel: number,
+  direction: -1 | 1,
+  windowSize: number,
+  minChannel: number,
+  maxChannel: number,
+) {
+  const startChannel =
+    direction === -1
+      ? Math.max(minChannel, edgeChannel - windowSize + 1)
+      : edgeChannel;
+  const endChannel =
+    direction === -1
+      ? edgeChannel
+      : Math.min(maxChannel, edgeChannel + windowSize - 1);
+
+  return averageRange(values, startChannel, endChannel);
+}
+
+function expandInformationBoundary(
+  peakChannel: number,
+  direction: -1 | 1,
+  localWindow: ReturnType<typeof buildLocalWindow>,
+  processed: ProcessedSpectrum,
+  infoPerChannel: number[],
+  settings: RoiDetectionSettings,
+) {
+  const windowSize = normalizeWindowSize(settings.growthStabilityWindow);
+  const peakInfoAverage = Math.max(
+    averageCenteredWindow(
+      infoPerChannel,
+      peakChannel,
+      windowSize,
+      localWindow.minChannel,
+      localWindow.maxChannel,
+    ),
+    infoPerChannel[peakChannel] ?? 0,
+    EPSILON,
+  );
+  const peakSignalAverage = Math.max(
+    averageCenteredWindow(
+      processed.corrected,
+      peakChannel,
+      windowSize,
+      localWindow.minChannel,
+      localWindow.maxChannel,
+    ),
+    processed.corrected[peakChannel] ?? 0,
+    EPSILON,
+  );
+  const infoThreshold =
+    peakInfoAverage *
+    Math.max(settings.growthStabilityThreshold, settings.relativeInfoGrowthThreshold);
+  const backgroundSignalThreshold =
+    peakSignalAverage *
+    Math.max(0.06, settings.growthStabilityThreshold * 4);
+  const allowedWeakSteps = Math.max(1, settings.maxWeakSteps);
+  const maxDirectionalSteps = Math.min(
+    settings.maxGrowthSteps,
+    localWindow.maxHalfWidth,
+  );
+
+  let cursor = peakChannel;
+  let lastUsefulChannel = peakChannel;
+  let weakSteps = 0;
+  let stepCount = 0;
+
+  while (stepCount < maxDirectionalSteps) {
+    const nextChannel = cursor + direction;
+
+    if (
+      nextChannel < localWindow.minChannel ||
+      nextChannel > localWindow.maxChannel
+    ) {
+      break;
+    }
+
+    const infoAverage = averageDirectionalWindow(
+      infoPerChannel,
+      nextChannel,
+      direction,
+      windowSize,
+      localWindow.minChannel,
+      localWindow.maxChannel,
+    );
+    const signalAverage = averageDirectionalWindow(
+      processed.corrected,
+      nextChannel,
+      direction,
+      windowSize,
+      localWindow.minChannel,
+      localWindow.maxChannel,
+    );
+    const weakInformation = infoAverage < infoThreshold;
+    const declineToBackground =
+      signalAverage <= backgroundSignalThreshold &&
+      infoAverage < peakInfoAverage * 0.15;
+
+    if (declineToBackground) {
+      break;
+    }
+
+    if (weakInformation) {
+      weakSteps += 1;
+
+      if (weakSteps > allowedWeakSteps) {
+        break;
+      }
+    } else {
+      weakSteps = 0;
+      lastUsefulChannel = nextChannel;
+    }
+
+    cursor = nextChannel;
+    stepCount += 1;
+  }
+
+  return lastUsefulChannel;
+}
+
 function growByInformation(
   peak: Peak,
   peaks: Peak[],
@@ -206,101 +362,26 @@ function growByInformation(
   index: number,
 ): ROI {
   const localWindow = buildLocalWindow(peaks, processed, index, settings);
-  const localPeakInfo = Math.max(
-    infoPerChannel[localWindow.peakChannel] ?? 0,
-    EPSILON,
+  const leftBoundary = expandInformationBoundary(
+    localWindow.peakChannel,
+    -1,
+    localWindow,
+    processed,
+    infoPerChannel,
+    settings,
   );
-  const peakSignal = Math.max(
-    processed.corrected[localWindow.peakChannel] ?? 0,
-    EPSILON,
+  const rightBoundary = expandInformationBoundary(
+    localWindow.peakChannel,
+    1,
+    localWindow,
+    processed,
+    infoPerChannel,
+    settings,
   );
-  const seedHalfWidth = Math.max(
-    2,
-    Math.min(
-      Math.round(Math.max(peak.widthHint, settings.minRoiWidth) / 2),
-      Math.floor((localWindow.maxChannel - localWindow.minChannel) / 2),
-    ),
-  );
-
-  let startChannel = Math.max(localWindow.minChannel, localWindow.peakChannel - seedHalfWidth);
-  let endChannel = Math.min(localWindow.maxChannel, localWindow.peakChannel + seedHalfWidth);
-  let information = infoPerChannel
-    .slice(startChannel, endChannel + 1)
-    .reduce((sum, value) => sum + value, 0);
-  let weakSteps = 0;
-  let stepCount = 0;
-  const allowedWeakSteps = Math.max(settings.maxWeakSteps + 2, 3);
-
-  while (
-    stepCount < settings.maxGrowthSteps &&
-    (startChannel > localWindow.minChannel || endChannel < localWindow.maxChannel)
-  ) {
-    const proposals: Array<{
-      start: number;
-      end: number;
-      delta: number;
-      edgeSignal: number;
-    }> = [];
-
-    if (startChannel > localWindow.minChannel) {
-      const nextStart = startChannel - 1;
-      proposals.push({
-        start: nextStart,
-        end: endChannel,
-        delta: infoPerChannel[nextStart] ?? 0,
-        edgeSignal: processed.corrected[nextStart] ?? 0,
-      });
-    }
-
-    if (endChannel < localWindow.maxChannel) {
-      const nextEnd = endChannel + 1;
-      proposals.push({
-        start: startChannel,
-        end: nextEnd,
-        delta: infoPerChannel[nextEnd] ?? 0,
-        edgeSignal: processed.corrected[nextEnd] ?? 0,
-      });
-    }
-
-    if (proposals.length === 0) {
-      break;
-    }
-
-    proposals.sort((left, right) => right.delta - left.delta);
-    const proposal = proposals[0];
-    const currentWidth = endChannel - startChannel + 1;
-    const relativeDelta =
-      information > EPSILON ? proposal.delta / information : proposal.delta;
-    const localRelativeDelta = proposal.delta / localPeakInfo;
-    const signalRatio = proposal.edgeSignal / peakSignal;
-    const weakGrowth =
-      proposal.delta < -EPSILON ||
-      (relativeDelta < settings.relativeInfoGrowthThreshold * 0.35 &&
-        localRelativeDelta < 0.03 &&
-        signalRatio < 0.12);
-
-    if (weakGrowth) {
-      weakSteps += 1;
-      if (weakSteps > allowedWeakSteps) {
-        break;
-      }
-    } else {
-      weakSteps = 0;
-    }
-
-    if (currentWidth >= localWindow.maxHalfWidth * 2 + 1) {
-      break;
-    }
-
-    startChannel = proposal.start;
-    endChannel = proposal.end;
-    information += proposal.delta;
-    stepCount += 1;
-  }
 
   const padded = padRoiWidth(
-    startChannel,
-    endChannel,
+    leftBoundary,
+    rightBoundary,
     localWindow.peakChannel,
     localWindow.minChannel,
     localWindow.maxChannel,
@@ -613,6 +694,22 @@ export function buildInformationRois(
   settings: RoiDetectionSettings,
 ) {
   const infoPerChannel = computeInformationPerChannel(sourceChannels, backgroundChannels);
+  return buildRoisFromInformation(
+    peaks,
+    processed,
+    detectorIds,
+    infoPerChannel,
+    settings,
+  );
+}
+
+export function buildRoisFromInformation(
+  peaks: Peak[],
+  processed: ProcessedSpectrum,
+  detectorIds: string[],
+  infoPerChannel: number[],
+  settings: RoiDetectionSettings,
+) {
   const totalInformation = infoPerChannel.reduce((sum, value) => sum + value, 0);
   const sortedPeaks = [...peaks].sort(
     (left, right) => left.refinedChannel - right.refinedChannel,

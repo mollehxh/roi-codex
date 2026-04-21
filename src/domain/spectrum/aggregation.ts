@@ -49,3 +49,48 @@ export function aggregateDetectors(
     },
   };
 }
+
+export function averageAggregatedSpectra(
+  spectra: AggregatedSpectrum[],
+  mode: AggregationMode,
+): AggregatedSpectrum {
+  if (spectra.length === 0) {
+    throw new Error("Нет спектров для усреднения.");
+  }
+
+  const channelCount = spectra[0].channels.length;
+
+  if (spectra.some((spectrum) => spectrum.channels.length !== channelCount)) {
+    throw new Error("Все спектры должны иметь одинаковое число каналов.");
+  }
+
+  const channels = new Array<number>(channelCount).fill(0);
+
+  for (const spectrum of spectra) {
+    for (let index = 0; index < channelCount; index += 1) {
+      channels[index] += spectrum.channels[index] ?? 0;
+    }
+  }
+
+  for (let index = 0; index < channelCount; index += 1) {
+    channels[index] /= spectra.length;
+  }
+
+  const slope =
+    spectra.reduce((sum, spectrum) => sum + spectrum.calibration.slope, 0) /
+    spectra.length;
+  const intercept =
+    spectra.reduce((sum, spectrum) => sum + spectrum.calibration.intercept, 0) /
+    spectra.length;
+  const detectorIds = [...new Set(spectra.flatMap((spectrum) => spectrum.detectorIds))];
+
+  return {
+    detectorIds,
+    mode,
+    channels,
+    calibration: {
+      slope,
+      intercept,
+    },
+  };
+}

@@ -4,26 +4,23 @@ import { Dropzone } from "@mantine/dropzone";
 interface FileDropzoneProps {
   label: string;
   description: string;
-  fileName: string | null;
-  onFileSelected: (file: File) => void;
+  fileNames: string[];
+  maxFiles?: number;
+  onFilesSelected: (files: File[]) => void;
 }
 
 export function FileDropzone({
   label,
   description,
-  fileName,
-  onFileSelected,
+  fileNames,
+  maxFiles,
+  onFilesSelected,
 }: FileDropzoneProps) {
   return (
     <Dropzone
-      maxFiles={1}
+      maxFiles={maxFiles}
       accept={[".spc", ".txt", "text/plain"]}
-      onDrop={(files) => {
-        const file = files[0];
-        if (file) {
-          onFileSelected(file);
-        }
-      }}
+      onDrop={(files) => onFilesSelected(files)}
     >
       <Stack gap={4}>
         <Text fw={500}>{label}</Text>
@@ -31,7 +28,7 @@ export function FileDropzone({
           {description}
         </Text>
         <Text size="sm" c="dimmed">
-          Текущий файл: {fileName ?? "не выбран"}
+          Текущие файлы: {fileNames.length > 0 ? fileNames.join(", ") : "не выбраны"}
         </Text>
       </Stack>
     </Dropzone>

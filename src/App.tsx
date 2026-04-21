@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { Alert, AppShell, Card, Grid, Loader, Stack, Text, Title } from "@mantine/core";
-import { analyzeSpectrum } from "./domain/analysis/analyzeSpectrum";
+import { analyzeSpectrumSet } from "./domain/analysis/analyzeSpectrumSet";
 import { parseSpectrumFile } from "./shared/spc/parseSpcFile";
 import {
   DEFAULT_OVERLAY_VISIBILITY,
@@ -22,25 +22,37 @@ import { SummaryStats } from "./ui/components/SummaryStats";
 const AGGREGATION_MODE: AggregationMode = "mean";
 
 function getCommonDetectors(
-  sourceFile: LoadedSpcFile | null,
-  backgroundFile: LoadedSpcFile | null,
+  sourceFiles: LoadedSpcFile[],
+  backgroundFiles: LoadedSpcFile[],
 ) {
-  if (!sourceFile || !backgroundFile) {
+  if (sourceFiles.length === 0 || backgroundFiles.length === 0) {
     return [];
   }
 
-  const backgroundIds = new Set(
-    backgroundFile.detectors.map((detector) => detector.detectorId),
+  const files = [...sourceFiles, ...backgroundFiles];
+  let commonIds = new Set(
+    files[0].detectors.map((detector) => detector.detectorId),
   );
 
-  return sourceFile.detectors.filter((detector) =>
-    backgroundIds.has(detector.detectorId),
+  for (const file of files.slice(1)) {
+    const fileIds = new Set(file.detectors.map((detector) => detector.detectorId));
+    commonIds = new Set(
+      [...commonIds].filter((detectorId) => fileIds.has(detectorId)),
+    );
+  }
+
+  return files[0].detectors.filter((detector) =>
+    commonIds.has(detector.detectorId),
   );
 }
 
+async function parseSpectrumFiles(files: File[]) {
+  return Promise.all(files.map((file) => parseSpectrumFile(file)));
+}
+
 export default function App() {
-  const [sourceFile, setSourceFile] = useState<LoadedSpcFile | null>(null);
-  const [backgroundFile, setBackgroundFile] = useState<LoadedSpcFile | null>(null);
+  const [sourceFiles, setSourceFiles] = useState<LoadedSpcFile[]>([]);
+  const [backgroundFiles, setBackgroundFiles] = useState<LoadedSpcFile[]>([]);
   const [selectedDetectorId, setSelectedDetectorId] = useState<string | null>(null);
   const [overlayVisibility, setOverlayVisibility] = useState<OverlayVisibility>(
     DEFAULT_OVERLAY_VISIBILITY,
@@ -48,13 +60,13 @@ export default function App() {
   const [analysis, setAnalysis] = useState<SpectrumAnalysisResult | null>(null);
   const [selectedRoiId, setSelectedRoiId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [isLoadingSourceFile, setIsLoadingSourceFile] = useState(false);
-  const [isLoadingBackgroundFile, setIsLoadingBackgroundFile] = useState(false);
+  const [isLoadingSourceFiles, setIsLoadingSourceFiles] = useState(false);
+  const [isLoadingBackgroundFiles, setIsLoadingBackgroundFiles] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const commonDetectors = useMemo(
-    () => getCommonDetectors(sourceFile, backgroundFile),
-    [sourceFile, backgroundFile],
+    () => getCommonDetectors(sourceFiles, backgroundFiles),
+    [sourceFiles, backgroundFiles],
   );
 
   useEffect(() => {
@@ -63,13 +75,20 @@ export default function App() {
       return;
     }
 
-    if (!selectedDetectorId || !commonDetectors.some((detector) => detector.detectorId === selectedDetectorId)) {
+    if (
+      !selectedDetectorId ||
+      !commonDetectors.some((detector) => detector.detectorId === selectedDetectorId)
+    ) {
       setSelectedDetectorId(commonDetectors[0]?.detectorId ?? null);
     }
   }, [commonDetectors, selectedDetectorId]);
 
   useEffect(() => {
-    if (!sourceFile || !backgroundFile || !selectedDetectorId) {
+    if (
+      sourceFiles.length === 0 ||
+      backgroundFiles.length === 0 ||
+      !selectedDetectorId
+    ) {
       setAnalysis(null);
       return;
     }
@@ -77,12 +96,10 @@ export default function App() {
     startTransition(() => {
       try {
         setAnalysis(
-          analyzeSpectrum({
-            detectors: sourceFile.detectors,
+          analyzeSpectrumSet({
+            sourceFiles,
+            backgroundFiles,
             selectedDetectorIds: [selectedDetectorId],
-            analysisMode: "comparison",
-            backgroundDetectors: backgroundFile.detectors,
-            selectedBackgroundDetectorIds: [selectedDetectorId],
             aggregationMode: AGGREGATION_MODE,
             preprocessingSettings: DEFAULT_PREPROCESSING_SETTINGS,
             peakDetectionSettings: DEFAULT_PEAK_DETECTION_SETTINGS,
@@ -94,60 +111,73 @@ export default function App() {
         const message =
           nextError instanceof Error
             ? nextError.message
-            : "Ошибка анализа спектра.";
+            : "Ошибка анализа спектров.";
         setError(message);
         setAnalysis(null);
       }
     });
   }, [
-    sourceFile,
-    backgroundFile,
+    sourceFiles,
+    backgroundFiles,
     selectedDetectorId,
   ]);
 
-  async function handleSourceFileSelected(file: File) {
-    setIsLoadingSourceFile(true);
+  async function handleSourceFilesSelected(files: File[]) {
+    if (files.length === 0) {
+      return;
+    }
+
+    setIsLoadingSourceFiles(true);
     setError(null);
 
     try {
-      const nextFile = await parseSpectrumFile(file);
-      setSourceFile(nextFile);
+      const nextFiles = await parseSpectrumFiles(files);
+      setSourceFiles(nextFiles);
       setSelectedRoiId(null);
     } catch (nextError) {
       const message =
         nextError instanceof Error
           ? nextError.message
-          : "Не удалось разобрать входной файл.";
+          : "Не удалось разобрать входные файлы.";
       setError(message);
-      setSourceFile(null);
+      setSourceFiles([]);
       setAnalysis(null);
     } finally {
-      setIsLoadingSourceFile(false);
+      setIsLoadingSourceFiles(false);
     }
   }
 
-  async function handleBackgroundFileSelected(file: File) {
-    setIsLoadingBackgroundFile(true);
+  async function handleBackgroundFilesSelected(files: File[]) {
+    if (files.length === 0) {
+      return;
+    }
+
+    setIsLoadingBackgroundFiles(true);
     setError(null);
 
     try {
-      const nextFile = await parseSpectrumFile(file);
-      setBackgroundFile(nextFile);
+      const nextFiles = await parseSpectrumFiles(files);
+      setBackgroundFiles(nextFiles);
       setSelectedRoiId(null);
     } catch (nextError) {
       const message =
         nextError instanceof Error
           ? nextError.message
-          : "Не удалось разобрать входной файл.";
+          : "Не удалось разобрать входные файлы.";
       setError(message);
-      setBackgroundFile(null);
+      setBackgroundFiles([]);
       setAnalysis(null);
     } finally {
-      setIsLoadingBackgroundFile(false);
+      setIsLoadingBackgroundFiles(false);
     }
   }
 
-  const isLoadingFile = isLoadingSourceFile || isLoadingBackgroundFile;
+  const isLoadingFile = isLoadingSourceFiles || isLoadingBackgroundFiles;
+  const hasInputFiles = sourceFiles.length > 0 && backgroundFiles.length > 0;
+  const analysisModeLabel =
+    sourceFiles.length > 1
+      ? "Различение спектров элементов"
+      : "Сравнение источника с фоном";
 
   return (
     <AppShell padding="md">
@@ -156,18 +186,20 @@ export default function App() {
           <Grid gutter="md">
             <Grid.Col span={{ base: 12, md: 6 }}>
               <FileDropzone
-                label="Файл источника"
-                description="Основной спектр для анализа ROI. Поддерживаются .spc и .txt."
-                fileName={sourceFile?.fileName ?? null}
-                onFileSelected={handleSourceFileSelected}
+                label="Спектры элементов"
+                description="Один или несколько спектров источников для поиска различающих ROI. Поддерживаются .spc и .txt."
+                fileNames={sourceFiles.map((file) => file.fileName)}
+                maxFiles={20}
+                onFilesSelected={handleSourceFilesSelected}
               />
             </Grid.Col>
             <Grid.Col span={{ base: 12, md: 6 }}>
               <FileDropzone
-                label="Файл фона"
-                description="Фоновый спектр для вычитания. Поддерживаются .spc и .txt."
-                fileName={backgroundFile?.fileName ?? null}
-                onFileSelected={handleBackgroundFileSelected}
+                label="Спектры фона"
+                description="Один или несколько фоновых спектров; при анализе они усредняются. Поддерживаются .spc и .txt."
+                fileNames={backgroundFiles.map((file) => file.fileName)}
+                maxFiles={20}
+                onFilesSelected={handleBackgroundFilesSelected}
               />
             </Grid.Col>
           </Grid>
@@ -178,20 +210,23 @@ export default function App() {
             <Card withBorder>
               <Stack align="center" gap="xs" py="md">
                 <Loader size="sm" />
-                <Text size="sm">Чтение и разбор файла `.spc` или `.txt`</Text>
+                <Text size="sm">Чтение и разбор файлов `.spc` или `.txt`</Text>
               </Stack>
             </Card>
           ) : null}
 
-          {sourceFile && backgroundFile ? (
+          {hasInputFiles ? (
             <Grid gutter="md" align="stretch">
               <Grid.Col span={{ base: 12, xl: 3 }}>
                 <Card withBorder>
                   <Stack gap="md">
                     <Title order={5}>Параметры анализа</Title>
+                    <Text size="sm" c="dimmed">
+                      {analysisModeLabel}. Источников: {sourceFiles.length}; фонов: {backgroundFiles.length}.
+                    </Text>
                     <DetectorSelector
                       label="Детектор"
-                      description="Один и тот же детектор используется и для источника, и для фона."
+                      description="Используется детектор, который есть во всех загруженных спектрах."
                       detectors={commonDetectors}
                       value={selectedDetectorId}
                       onChange={(value) => {
@@ -219,6 +254,7 @@ export default function App() {
                         peaks={analysis?.peaks ?? []}
                         rois={analysis?.rois ?? []}
                         comparison={analysis?.comparison ?? null}
+                        multiComparison={analysis?.multiComparison ?? null}
                         showPeaks={overlayVisibility.showPeaks}
                         showRoi={overlayVisibility.showRoi}
                         selectedRoiId={selectedRoiId}
@@ -235,7 +271,7 @@ export default function App() {
 
                   {isPending ? (
                     <Text size="sm" c="dimmed">
-                      Пересчет спектра, пиков и ROI
+                      Пересчет спектров, пиков и ROI
                     </Text>
                   ) : null}
                 </Stack>
@@ -246,7 +282,7 @@ export default function App() {
               <Stack gap="xs">
                 <Title order={5}>Данные не загружены</Title>
                 <Text size="sm" c="dimmed">
-                  Загрузите файл источника и файл фона в формате `.spc` или `.txt`.
+                  Загрузите спектры элементов и хотя бы один фон в формате `.spc` или `.txt`.
                 </Text>
               </Stack>
             </Card>

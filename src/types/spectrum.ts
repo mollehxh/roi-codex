@@ -103,6 +103,20 @@ export interface ComparisonSpectrum {
   totalInformation: number;
 }
 
+export interface NamedAggregatedSpectrum {
+  id: string;
+  name: string;
+  spectrum: AggregatedSpectrum;
+}
+
+export interface MultiSpectrumComparison {
+  sources: NamedAggregatedSpectrum[];
+  background: AggregatedSpectrum | null;
+  discriminant: AggregatedSpectrum;
+  infoPerChannel: number[];
+  totalInformation: number;
+}
+
 export interface ProcessedSpectrum {
   raw: number[];
   smoothed: number[];
@@ -118,6 +132,7 @@ export interface SpectrumAnalysisResult {
   peaks: Peak[];
   rois: ROI[];
   comparison: ComparisonSpectrum | null;
+  multiComparison: MultiSpectrumComparison | null;
 }
 
 export const DEFAULT_PREPROCESSING_SETTINGS: PreprocessingSettings = {
