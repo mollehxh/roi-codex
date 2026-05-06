@@ -1,4 +1,5 @@
 import type {
+  InformationMetric,
   Peak,
   ProcessedSpectrum,
   ROI,
@@ -677,11 +678,21 @@ export function buildRois(
 export function computeInformationPerChannel(
   sourceChannels: number[],
   backgroundChannels: number[],
+  metric: InformationMetric = "proposed",
 ) {
   return sourceChannels.map((sourceValue, index) => {
     const phi = Math.max(1e-9, backgroundChannels[index] ?? 0);
     const alpha = Math.max(0, sourceValue - (backgroundChannels[index] ?? 0));
-    return alpha * Math.log(1 + alpha / phi);
+
+    if (metric === "current") {
+      // Previous implementation, intentionally kept for reference:
+      // return alpha * Math.log(1 + alpha / phi);
+      return alpha * Math.log(1 + alpha / phi);
+    }
+
+    // Proposed metric from task:
+    // alpha^2 / (alpha + phi), where alpha is source excess over background.
+    return (alpha * alpha) / Math.max(alpha + phi, EPSILON);
   });
 }
 
@@ -692,8 +703,13 @@ export function buildInformationRois(
   sourceChannels: number[],
   backgroundChannels: number[],
   settings: RoiDetectionSettings,
+  metric: InformationMetric = "proposed",
 ) {
-  const infoPerChannel = computeInformationPerChannel(sourceChannels, backgroundChannels);
+  const infoPerChannel = computeInformationPerChannel(
+    sourceChannels,
+    backgroundChannels,
+    metric,
+  );
   return buildRoisFromInformation(
     peaks,
     processed,

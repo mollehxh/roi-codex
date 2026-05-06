@@ -16,33 +16,33 @@ export function RoiTable({ rois, selectedRoiId, onSelect }: RoiTableProps) {
     (sum, roi) => sum + roi.informationFraction,
     0,
   );
-  const totalWidth = rois.reduce((sum, roi) => sum + roi.width, 0);
-
   return (
     <Card withBorder h="100%">
-      <Title order={5} mb="xs">
-        Список ROI
+      <Title order={5} mb="sm">
+        ROI зоны
       </Title>
-      <Text size="sm" c="dimmed" mb="md">
-        Найдено: {rois.length}; суммарная информация: {totalInformation.toFixed(6)}
-      </Text>
 
-      <ScrollArea h={420}>
-        <Table striped highlightOnHover stickyHeader>
+      <ScrollArea h={560}>
+        <Table
+          highlightOnHover
+          horizontalSpacing="md"
+          verticalSpacing="sm"
+          withTableBorder={false}
+          withColumnBorders={false}
+        >
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>ROI</Table.Th>
-              <Table.Th>Начало</Table.Th>
-              <Table.Th>Конец</Table.Th>
-              <Table.Th>Ширина</Table.Th>
-              <Table.Th>Информация</Table.Th>
+              <Table.Th>#</Table.Th>
+              <Table.Th>Зона</Table.Th>
+              <Table.Th>Диапазон (каналы)</Table.Th>
+              <Table.Th>Вес (инт.)</Table.Th>
               <Table.Th>Доля</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {rois.length === 0 ? (
               <Table.Tr>
-                <Table.Td colSpan={6}>
+                <Table.Td colSpan={5}>
                   <Text size="sm" c="dimmed">
                     ROI не найдены.
                   </Text>
@@ -50,21 +50,25 @@ export function RoiTable({ rois, selectedRoiId, onSelect }: RoiTableProps) {
               </Table.Tr>
             ) : (
               <>
-                {rois.map((roi) => {
+                {rois.map((roi, index) => {
                   const selected = roi.id === selectedRoiId;
+                  const roiNumber = roi.id.match(/\d+$/)?.[0] ?? String(index + 1);
 
                   return (
                     <Table.Tr
                       key={roi.id}
-                      bg={selected ? "var(--mantine-color-gray-1)" : undefined}
+                      bg={selected ? "var(--mantine-color-blue-0)" : undefined}
                       onMouseEnter={() => onSelect(roi.id)}
                       onMouseLeave={() => onSelect(null)}
                     >
-                      <Table.Td>{roi.id}</Table.Td>
-                      <Table.Td>{roi.startChannel}</Table.Td>
-                      <Table.Td>{roi.endChannel}</Table.Td>
-                      <Table.Td>{roi.width}</Table.Td>
-                      <Table.Td>{roi.information.toFixed(6)}</Table.Td>
+                      <Table.Td>{roiNumber}</Table.Td>
+                      <Table.Td>
+                        <Text fw={500}>{roi.id}</Text>
+                      </Table.Td>
+                      <Table.Td>
+                        {roi.startChannel} - {roi.endChannel}
+                      </Table.Td>
+                      <Table.Td>{roi.information.toFixed(3)}</Table.Td>
                       <Table.Td>{(roi.informationFraction * 100).toFixed(2)}%</Table.Td>
                     </Table.Tr>
                   );
@@ -72,9 +76,8 @@ export function RoiTable({ rois, selectedRoiId, onSelect }: RoiTableProps) {
                 <Table.Tr fw={700}>
                   <Table.Td>Итого</Table.Td>
                   <Table.Td>-</Table.Td>
-                  <Table.Td>-</Table.Td>
-                  <Table.Td>{totalWidth}</Table.Td>
-                  <Table.Td>{totalInformation.toFixed(6)}</Table.Td>
+                  <Table.Td />
+                  <Table.Td>{totalInformation.toFixed(3)}</Table.Td>
                   <Table.Td>{(totalInformationFraction * 100).toFixed(2)}%</Table.Td>
                 </Table.Tr>
               </>

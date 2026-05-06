@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Card, Group, Stack, Text, Title } from "@mantine/core";
+import { Card, Group, Stack, Text, Title } from "@mantine/core";
 import {
   Brush,
   CartesianGrid,
@@ -30,6 +30,7 @@ interface SpectrumChartProps {
   showPeaks: boolean;
   showRoi: boolean;
   selectedRoiId: string | null;
+  totalInformation: number;
 }
 
 interface ZoomRange {
@@ -56,6 +57,7 @@ export function SpectrumChart({
   showPeaks,
   showRoi,
   selectedRoiId,
+  totalInformation,
 }: SpectrumChartProps) {
   const visibleSources = useMemo(
     () => multiComparison?.sources.slice(0, 6) ?? [],
@@ -99,33 +101,14 @@ export function SpectrumChart({
   return (
     <Card withBorder h="100%">
       <Stack gap="xs">
-        <Group justify="space-between" align="flex-start">
-          <div>
-            <Title order={5}>Спектр</Title>
-            <Text size="sm" c="dimmed">
-              Спектры и фон. ROI подсвечиваются цветом, диапазон можно
-              масштабировать.
-            </Text>
-          </div>
-          <Button
-            variant="default"
-            size="xs"
-            onClick={() =>
-              setZoomRange({
-                startIndex: 0,
-                endIndex: Math.max(0, data.length - 1),
-              })
-            }
-            disabled={
-              zoomRange.startIndex === 0 &&
-              zoomRange.endIndex === Math.max(0, data.length - 1)
-            }
-          >
-            Сбросить зум
-          </Button>
+        <Group justify="space-between" align="center">
+          <Title order={5}>Спектр</Title>
+          <Text size="sm" fw={700}>
+            ИНФОРМАЦИЯ: {totalInformation.toFixed(4)}
+          </Text>
         </Group>
 
-        <div style={{ width: "100%", height: 460 }}>
+        <div style={{ width: "100%", height: 560 }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
               <CartesianGrid strokeDasharray="4 4" stroke="#dee2e6" />
@@ -148,11 +131,12 @@ export function SpectrumChart({
                         key={roi.id}
                         x1={roi.startChannel}
                         x2={roi.endChannel}
-                        fill={selected ? "#228be6" : "#ffd43b"}
-                        fillOpacity={selected ? 0.3 : 0.18}
-                        stroke={selected ? "#1c7ed6" : "#f59f00"}
-                        strokeOpacity={selected ? 0.9 : 0.55}
+                        fill="#3b82f6"
+                        fillOpacity={selected ? 0.18 : 0.08}
+                        stroke={selected ? "#1c7ed6" : "#74a9ff"}
+                        strokeOpacity={selected ? 0.9 : 0.6}
                         strokeWidth={selected ? 2 : 1}
+                        strokeDasharray={selected ? undefined : "4 3"}
                       />
                     );
                   })
@@ -213,15 +197,6 @@ export function SpectrumChart({
                     stroke="#f08c00"
                     dot={false}
                     strokeWidth={1.5}
-                    isAnimationActive={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="processed"
-                    name="Обработанный"
-                    stroke="#1971c2"
-                    dot={false}
-                    strokeWidth={2}
                     isAnimationActive={false}
                   />
                 </>

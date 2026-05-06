@@ -16,6 +16,7 @@ import type {
   AggregatedSpectrum,
   AggregationMode,
   DetectorSpectrum,
+  InformationMetric,
   LoadedSpcFile,
   Peak,
   PeakDetectionSettings,
@@ -35,6 +36,7 @@ interface AnalyzeSpectrumSetInput {
   preprocessingSettings: PreprocessingSettings;
   peakDetectionSettings: PeakDetectionSettings;
   roiDetectionSettings: RoiDetectionSettings;
+  informationMetric?: InformationMetric;
 }
 
 interface SourceCandidateAnalysis {
@@ -222,10 +224,12 @@ function analyzeSourceAgainstBackground(
   preprocessingSettings: PreprocessingSettings,
   peakDetectionSettings: PeakDetectionSettings,
   roiDetectionSettings: RoiDetectionSettings,
+  informationMetric: InformationMetric,
 ): SourceCandidateAnalysis {
   const infoPerChannel = computeInformationPerChannel(
     source.channels,
     background.channels,
+    informationMetric,
   );
   const infoSpectrum = buildInfoSpectrum(source, infoPerChannel, aggregationMode);
   const processedInfo = preprocessSpectrum(infoSpectrum, preprocessingSettings);
@@ -457,6 +461,7 @@ export function analyzeSpectrumSet({
   preprocessingSettings,
   peakDetectionSettings,
   roiDetectionSettings,
+  informationMetric = "proposed",
 }: AnalyzeSpectrumSetInput): SpectrumAnalysisResult {
   if (sourceFiles.length === 0) {
     throw new Error("Загрузите хотя бы один спектр источника.");
@@ -488,6 +493,7 @@ export function analyzeSpectrumSet({
       preprocessingSettings,
       peakDetectionSettings,
       roiDetectionSettings,
+      informationMetric,
     });
   }
 
@@ -508,6 +514,7 @@ export function analyzeSpectrumSet({
       preprocessingSettings,
       peakDetectionSettings,
       roiDetectionSettings,
+      informationMetric,
     ),
   );
   const utilityProfile = buildUtilityProfile(candidateAnalyses);

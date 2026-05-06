@@ -13,6 +13,7 @@ import type {
   AggregationMode,
   ComparisonSpectrum,
   DetectorSpectrum,
+  InformationMetric,
   PeakDetectionSettings,
   PreprocessingSettings,
   RoiDetectionSettings,
@@ -30,6 +31,7 @@ interface AnalyzeSpectrumInput {
   preprocessingSettings: PreprocessingSettings;
   peakDetectionSettings: PeakDetectionSettings;
   roiDetectionSettings: RoiDetectionSettings;
+  informationMetric?: InformationMetric;
 }
 
 export function analyzeSpectrum({
@@ -43,6 +45,7 @@ export function analyzeSpectrum({
   preprocessingSettings,
   peakDetectionSettings,
   roiDetectionSettings,
+  informationMetric = "proposed",
 }: AnalyzeSpectrumInput): SpectrumAnalysisResult {
   const sourceAggregated = aggregateDetectors(
     detectors,
@@ -108,6 +111,7 @@ export function analyzeSpectrum({
       comparison.source.channels,
       comparison.background.channels,
       roiDetectionSettings,
+      informationMetric,
     );
     rois = comparisonRois.rois;
     comparison.infoPerChannel = comparisonRois.infoPerChannel;

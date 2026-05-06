@@ -9,6 +9,7 @@ export type AggregationMode = "mean";
 export type NormalizationMode = "none" | "sum";
 export type AnalysisMode = "single" | "comparison";
 export type PeakSelectionMode = "auto" | "manual";
+export type InformationMetric = "current" | "proposed";
 
 export interface DetectorSpectrum {
   detectorId: string;
