@@ -16,7 +16,10 @@ const EPSILON = 1e-9;
 
 function normalizeSegment(segment: number[]) {
   const safeSegment = segment.map((value) => Math.max(value, 0) + EPSILON);
-  const sum = safeSegment.reduce((accumulator, value) => accumulator + value, 0);
+  const sum = safeSegment.reduce(
+    (accumulator, value) => accumulator + value,
+    0,
+  );
 
   if (sum <= 0) {
     return safeSegment.map(() => 1 / safeSegment.length);
@@ -57,12 +60,16 @@ function evaluateRoi(
   endChannel: number,
   settings: RoiDetectionSettings,
 ): RoiMetrics {
-  const correctedSlice = processed.corrected.slice(startChannel, endChannel + 1);
+  const correctedSlice = processed.corrected.slice(
+    startChannel,
+    endChannel + 1,
+  );
   const baselineSlice = processed.baseline.slice(startChannel, endChannel + 1);
   const klScore = computeKlDivergence(correctedSlice, baselineSlice);
   const fisherScore = computeFisherInformation(correctedSlice);
   const score =
-    settings.scoreWeights.kl * klScore + settings.scoreWeights.fisher * fisherScore;
+    settings.scoreWeights.kl * klScore +
+    settings.scoreWeights.fisher * fisherScore;
 
   return {
     klScore,
@@ -90,7 +97,10 @@ function padRoiWidth(
       break;
     }
 
-    if (canGrowLeft && (!canGrowRight || peakChannel - start <= end - peakChannel)) {
+    if (
+      canGrowLeft &&
+      (!canGrowRight || peakChannel - start <= end - peakChannel)
+    ) {
       start -= 1;
       continue;
     }
@@ -108,10 +118,15 @@ function getPeakBounds(peaks: Peak[], index: number, signalLength: number) {
   const previousPeak =
     index > 0 ? Math.round(peaks[index - 1].refinedChannel) : null;
   const nextPeak =
-    index < peaks.length - 1 ? Math.round(peaks[index + 1].refinedChannel) : null;
+    index < peaks.length - 1
+      ? Math.round(peaks[index + 1].refinedChannel)
+      : null;
 
   return {
-    leftLimit: previousPeak === null ? 0 : Math.floor((previousPeak + currentPeak) / 2) + 1,
+    leftLimit:
+      previousPeak === null
+        ? 0
+        : Math.floor((previousPeak + currentPeak) / 2) + 1,
     rightLimit:
       nextPeak === null
         ? signalLength - 1
@@ -285,10 +300,12 @@ function expandInformationBoundary(
   );
   const infoThreshold =
     peakInfoAverage *
-    Math.max(settings.growthStabilityThreshold, settings.relativeInfoGrowthThreshold);
+    Math.max(
+      settings.growthStabilityThreshold,
+      settings.relativeInfoGrowthThreshold,
+    );
   const backgroundSignalThreshold =
-    peakSignalAverage *
-    Math.max(0.06, settings.growthStabilityThreshold * 4);
+    peakSignalAverage * Math.max(0.06, settings.growthStabilityThreshold * 4);
   const allowedWeakSteps = Math.max(1, settings.maxWeakSteps);
   const maxDirectionalSteps = Math.min(
     settings.maxGrowthSteps,
@@ -363,6 +380,14 @@ function growByInformation(
   index: number,
 ): ROI {
   const localWindow = buildLocalWindow(peaks, processed, index, settings);
+  localWindow.minChannel = Math.max(
+    localWindow.minChannel,
+    settings.minChannel,
+  );
+  localWindow.maxChannel = Math.min(
+    localWindow.maxChannel,
+    settings.maxChannel,
+  );
   const leftBoundary = expandInformationBoundary(
     localWindow.peakChannel,
     -1,
@@ -403,7 +428,8 @@ function growByInformation(
     klScore: metrics.klScore,
     fisherScore: metrics.fisherScore,
     information: roiInformation,
-    informationFraction: totalInformation > 0 ? roiInformation / totalInformation : 0,
+    informationFraction:
+      totalInformation > 0 ? roiInformation / totalInformation : 0,
     detectorIds: [],
     peakId: peak.id,
   };
@@ -429,16 +455,28 @@ function growByLocalScore(
     ),
   );
 
-  let startChannel = Math.max(localWindow.minChannel, localWindow.peakChannel - seedHalfWidth);
-  let endChannel = Math.min(localWindow.maxChannel, localWindow.peakChannel + seedHalfWidth);
-  let currentMetrics = evaluateRoi(processed, startChannel, endChannel, settings);
+  let startChannel = Math.max(
+    localWindow.minChannel,
+    localWindow.peakChannel - seedHalfWidth,
+  );
+  let endChannel = Math.min(
+    localWindow.maxChannel,
+    localWindow.peakChannel + seedHalfWidth,
+  );
+  let currentMetrics = evaluateRoi(
+    processed,
+    startChannel,
+    endChannel,
+    settings,
+  );
   let weakSteps = 0;
   let stepCount = 0;
   const allowedWeakSteps = Math.max(settings.maxWeakSteps + 2, 3);
 
   while (
     stepCount < settings.maxGrowthSteps &&
-    (startChannel > localWindow.minChannel || endChannel < localWindow.maxChannel)
+    (startChannel > localWindow.minChannel ||
+      endChannel < localWindow.maxChannel)
   ) {
     const proposals: Array<{
       start: number;
@@ -587,8 +625,14 @@ function shouldMergeGap(
   }
 
   const gapSignal = processed.corrected.slice(gapStart, gapEnd + 1);
-  const leftSignal = processed.corrected.slice(left.startChannel, left.endChannel + 1);
-  const rightSignal = processed.corrected.slice(right.startChannel, right.endChannel + 1);
+  const leftSignal = processed.corrected.slice(
+    left.startChannel,
+    left.endChannel + 1,
+  );
+  const rightSignal = processed.corrected.slice(
+    right.startChannel,
+    right.endChannel + 1,
+  );
   const gapPeak = Math.max(...gapSignal, 0);
   const gapMean = average(gapSignal);
   const referencePeak = Math.min(
@@ -678,21 +722,29 @@ export function buildRois(
 export function computeInformationPerChannel(
   sourceChannels: number[],
   backgroundChannels: number[],
-  metric: InformationMetric = "proposed",
+  metric: InformationMetric = "fisher",
 ) {
   return sourceChannels.map((sourceValue, index) => {
-    const phi = Math.max(1e-9, backgroundChannels[index] ?? 0);
-    const alpha = Math.max(0, sourceValue - (backgroundChannels[index] ?? 0));
+    const backgroundValue = backgroundChannels[index] ?? 0;
+    const signal = Math.max(0, sourceValue);
+    const background = Math.max(EPSILON, backgroundValue);
+    const combined = signal + background;
 
     if (metric === "current") {
       // Previous implementation, intentionally kept for reference:
       // return alpha * Math.log(1 + alpha / phi);
+      const alpha = Math.max(0, sourceValue - backgroundValue);
+      const phi = Math.max(EPSILON, backgroundValue);
       return alpha * Math.log(1 + alpha / phi);
     }
 
-    // Proposed metric from task:
-    // alpha^2 / (alpha + phi), where alpha is source excess over background.
-    return (alpha * alpha) / Math.max(alpha + phi, EPSILON);
+    if (metric === "kl" || metric === "proposed") {
+      // Poisson KL divergence: (s_i + b_i) * ln((s_i + b_i) / b_i) - s_i.
+      return combined * Math.log(combined / background) - signal;
+    }
+
+    // Fisher information for mass m=1: s_i^2 / (m * s_i + b_i).
+    return (signal * signal) / combined;
   });
 }
 
@@ -703,7 +755,7 @@ export function buildInformationRois(
   sourceChannels: number[],
   backgroundChannels: number[],
   settings: RoiDetectionSettings,
-  metric: InformationMetric = "proposed",
+  metric: InformationMetric = "fisher",
 ) {
   const infoPerChannel = computeInformationPerChannel(
     sourceChannels,
@@ -726,16 +778,27 @@ export function buildRoisFromInformation(
   infoPerChannel: number[],
   settings: RoiDetectionSettings,
 ) {
-  const totalInformation = infoPerChannel.reduce((sum, value) => sum + value, 0);
-  const sortedPeaks = [...peaks].sort(
-    (left, right) => left.refinedChannel - right.refinedChannel,
+  const minChannel = Math.max(0, settings.minChannel);
+  const maxChannel = Math.min(infoPerChannel.length - 1, settings.maxChannel);
+  const workingInfoPerChannel = infoPerChannel.map((value, channel) =>
+    channel >= minChannel && channel <= maxChannel ? value : 0,
   );
+  const totalInformation = workingInfoPerChannel.reduce(
+    (sum, value) => sum + value,
+    0,
+  );
+  const sortedPeaks = [...peaks]
+    .sort((left, right) => left.refinedChannel - right.refinedChannel)
+    .filter(
+      (peak) =>
+        peak.refinedChannel >= minChannel && peak.refinedChannel <= maxChannel,
+    );
   const rois = sortedPeaks.map((peak, index) => ({
     ...growByInformation(
       peak,
       sortedPeaks,
       processed,
-      infoPerChannel,
+      workingInfoPerChannel,
       totalInformation,
       settings,
       index,
@@ -746,8 +809,8 @@ export function buildRoisFromInformation(
   const normalizedRois = splitOverlappingRois(rois);
 
   return {
-    rois: mergeAdjacentRois(normalizedRois, processed, infoPerChannel),
-    infoPerChannel,
+    rois: mergeAdjacentRois(normalizedRois, processed, workingInfoPerChannel),
+    infoPerChannel: workingInfoPerChannel,
     totalInformation,
   };
 }

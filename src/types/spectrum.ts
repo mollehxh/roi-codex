@@ -9,7 +9,8 @@ export type AggregationMode = "mean";
 export type NormalizationMode = "none" | "sum";
 export type AnalysisMode = "single" | "comparison";
 export type PeakSelectionMode = "auto" | "manual";
-export type InformationMetric = "current" | "proposed";
+export type InformationMetric = "current" | "proposed" | "kl" | "fisher";
+export type PeakSearchSignal = "element" | "combined";
 
 export interface DetectorSpectrum {
   detectorId: string;
@@ -42,6 +43,8 @@ export interface PreprocessingSettings {
 }
 
 export interface PeakDetectionSettings {
+  minChannel: number;
+  maxChannel: number;
   minHeightRatio: number;
   minProminence: number;
   minDistance: number;
@@ -51,6 +54,8 @@ export interface PeakDetectionSettings {
 }
 
 export interface RoiDetectionSettings {
+  minChannel: number;
+  maxChannel: number;
   maxExpansion: number;
   minRoiWidth: number;
   degradationTolerance: number;
@@ -144,6 +149,8 @@ export const DEFAULT_PREPROCESSING_SETTINGS: PreprocessingSettings = {
 };
 
 export const DEFAULT_PEAK_DETECTION_SETTINGS: PeakDetectionSettings = {
+  minChannel: 200,
+  maxChannel: 900,
   minHeightRatio: 0.035,
   minProminence: 0.004,
   minDistance: 12,
@@ -153,6 +160,8 @@ export const DEFAULT_PEAK_DETECTION_SETTINGS: PeakDetectionSettings = {
 };
 
 export const DEFAULT_ROI_DETECTION_SETTINGS: RoiDetectionSettings = {
+  minChannel: 200,
+  maxChannel: 900,
   maxExpansion: 96,
   minRoiWidth: 5,
   degradationTolerance: 0.1,

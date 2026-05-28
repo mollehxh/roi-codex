@@ -251,15 +251,34 @@ export function detectPeaks(
   settings: PeakDetectionSettings,
   calibration: EnergyCalibration,
 ): AutoPeakDetectionResult {
-  const signal = processed.normalized;
+  const correctedSignal = processed.corrected;
   const refinementSignal = processed.raw;
-  const maxValue = Math.max(...signal, 0);
   const candidates: PeakCandidate[] = [];
   const searchMargin = Math.max(4, Math.floor(settings.minDistance / 2));
+  const minChannel = Math.max(searchMargin, settings.minChannel);
+  const maxChannel = Math.min(
+    correctedSignal.length - 1 - searchMargin,
+    settings.maxChannel,
+  );
+  const rangeSum = correctedSignal
+    .slice(minChannel, maxChannel + 1)
+    .reduce((sum, value) => sum + Math.max(0, value), 0);
+  const signal =
+    rangeSum > 0
+      ? correctedSignal.map((value, index) =>
+          index >= minChannel && index <= maxChannel
+            ? Math.max(0, value) / rangeSum
+            : 0,
+        )
+      : processed.normalized;
+  const maxValue = Math.max(
+    ...signal.slice(minChannel, maxChannel + 1),
+    0,
+  );
 
   for (
-    let index = searchMargin;
-    index < signal.length - 1 - searchMargin;
+    let index = minChannel;
+    index <= maxChannel;
     index += 1
   ) {
     const value = signal[index] ?? 0;

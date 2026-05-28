@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { Card, Group, Stack, Text, Title } from "@mantine/core";
+import {
+  Card,
+  Checkbox,
+  Group,
+  Stack,
+  Text,
+  ThemeIcon,
+  Title,
+  Tooltip as MantineTooltip,
+} from "@mantine/core";
 import {
   Brush,
   CartesianGrid,
@@ -9,7 +18,7 @@ import {
   ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   XAxis,
   YAxis,
 } from "recharts";
@@ -36,6 +45,12 @@ interface SpectrumChartProps {
 interface ZoomRange {
   startIndex: number;
   endIndex: number;
+}
+
+interface VisibleLines {
+  source: boolean;
+  background: boolean;
+  combined: boolean;
 }
 
 const SOURCE_COLORS = [
@@ -66,14 +81,18 @@ export function SpectrumChart({
   const data = useMemo(
     () =>
       displayChannels.map((value, index) => {
+        const element = comparison?.source.channels[index] ?? null;
+        const background = comparison?.background.channels[index] ?? null;
         const row: Record<string, number | null> = {
           channel: index,
-          source: comparison?.source.channels[index] ?? null,
-          background: comparison?.background.channels[index] ?? null,
-          difference: multiComparison
-            ? null
-            : comparison?.difference.channels[index] ?? rawChannels[index] ?? null,
-          processed: multiComparison ? null : value,
+          source:
+            comparison ? element : !multiComparison ? rawChannels[index] ?? value : null,
+          element,
+          background,
+          combined:
+            element !== null && background !== null ? element + background : null,
+          spectrum:
+            !multiComparison && !comparison ? rawChannels[index] ?? value : null,
         };
 
         visibleSources.forEach((source, sourceIndex) => {
@@ -90,6 +109,18 @@ export function SpectrumChart({
     startIndex: 0,
     endIndex: Math.max(0, data.length - 1),
   });
+  const [visibleLines, setVisibleLines] = useState<VisibleLines>({
+    source: true,
+    background: true,
+    combined: true,
+  });
+
+  function toggleLine(line: keyof VisibleLines) {
+    setVisibleLines((current) => ({
+      ...current,
+      [line]: !current[line],
+    }));
+  }
 
   useEffect(() => {
     setZoomRange({
@@ -103,9 +134,52 @@ export function SpectrumChart({
       <Stack gap="xs">
         <Group justify="space-between" align="center">
           <Title order={5}>Спектр</Title>
-          <Text size="sm" fw={700}>
-            ИНФОРМАЦИЯ: {totalInformation.toFixed(4)}
-          </Text>
+          <Group gap={6} align="center">
+            <Text size="sm" fw={700}>
+              ИНФОРМАЦИЯ: {totalInformation.toFixed(4)}
+            </Text>
+            <MantineTooltip
+              withArrow
+              multiline
+              w={360}
+              label={
+                <>
+                  <Text size="md" fw={700}>
+                    I = Σ sᵢ² / (sᵢ + bᵢ), где sᵢ — элемент, bᵢ — фон.
+                  </Text>
+                  <Text size="sm" c="dimmed">
+                    sᵢ — вклад элемента в канале i, bᵢ — фоновые отсчёты в канале i.
+                  </Text>
+                </>
+              }
+            >
+              <ThemeIcon size={18} radius="xl" variant="light" color="blue">
+                i
+              </ThemeIcon>
+            </MantineTooltip>
+          </Group>
+        </Group>
+        <Group gap="md">
+          <Checkbox
+            size="xs"
+            checked={visibleLines.source}
+            label={comparison ? "Элемент" : "Спектр"}
+            onChange={() => toggleLine("source")}
+          />
+          <Checkbox
+            size="xs"
+            checked={visibleLines.background}
+            label="Фон"
+            disabled={!comparison}
+            onChange={() => toggleLine("background")}
+          />
+          <Checkbox
+            size="xs"
+            checked={visibleLines.combined}
+            label="Элемент + фон"
+            disabled={!comparison}
+            onChange={() => toggleLine("combined")}
+          />
         </Group>
 
         <div style={{ width: "100%", height: 560 }}>
@@ -120,7 +194,7 @@ export function SpectrumChart({
                 tick={{ fontSize: 12 }}
               />
               <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip />
+              <RechartsTooltip />
               <Legend />
 
               {showRoi
@@ -154,7 +228,7 @@ export function SpectrumChart({
                   ))
                 : null}
 
-              {multiComparison
+              {multiComparison && visibleLines.source
                 ? visibleSources.map((source, index) => (
                     <Line
                       key={source.id}
@@ -168,32 +242,34 @@ export function SpectrumChart({
                       isAnimationActive={false}
                     />
                   ))
-                : (
+                : !multiComparison && visibleLines.source ? (
                     <Line
                       type="monotone"
                       dataKey="source"
-                      name="Источник"
+                      name={comparison ? "Элемент" : "Спектр"}
                       stroke="#228be6"
                       dot={false}
                       strokeWidth={1.5}
                       isAnimationActive={false}
                     />
-                  )}
-              <Line
-                type="monotone"
-                dataKey="background"
-                name="Фон"
-                stroke="#868e96"
-                dot={false}
-                strokeWidth={1.5}
-                isAnimationActive={false}
-              />
-              {!multiComparison ? (
+                  ) : null}
+              {comparison && visibleLines.background ? (
+                <Line
+                  type="monotone"
+                  dataKey="background"
+                  name="Фон"
+                  stroke="#868e96"
+                  dot={false}
+                  strokeWidth={1.5}
+                  isAnimationActive={false}
+                />
+              ) : null}
+              {comparison && visibleLines.combined ? (
                 <>
                   <Line
                     type="monotone"
-                    dataKey="difference"
-                    name="Разность"
+                    dataKey="combined"
+                    name="Элемент + фон"
                     stroke="#f08c00"
                     dot={false}
                     strokeWidth={1.5}

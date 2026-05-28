@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { analyzeSpectrum } from "../analysis/analyzeSpectrum";
 import { analyzeSpectrumSet } from "../analysis/analyzeSpectrumSet";
-import { buildRoisFromInformation } from "../roi/roiDetection";
+import {
+  buildRoisFromInformation,
+  computeInformationPerChannel,
+} from "../roi/roiDetection";
 import {
   DEFAULT_PEAK_DETECTION_SETTINGS,
   DEFAULT_PREPROCESSING_SETTINGS,
@@ -138,6 +141,18 @@ function buildLoadedFile(fileName: string, detector: DetectorSpectrum): LoadedSp
 }
 
 describe("analyzeSpectrum", () => {
+  it("computes the Poisson KL information against background", () => {
+    const [information] = computeInformationPerChannel([25], [10], "kl");
+
+    expect(information).toBeCloseTo(35 * Math.log(35 / 10) - 25, 8);
+  });
+
+  it("computes Fisher information for mass equal to one", () => {
+    const [information] = computeInformationPerChannel([25], [10], "fisher");
+
+    expect(information).toBeCloseTo((25 * 25) / (25 + 10), 8);
+  });
+
   it("detects peaks and ROIs on a synthetic spectrum", () => {
     const detector = buildSyntheticDetector("detector-1");
     const analysis = analyzeSpectrum({
@@ -256,6 +271,154 @@ describe("analyzeSpectrum", () => {
 
     expect(analysis.comparison?.background.channels[12]).toBeCloseTo(5, 5);
     expect(analysis.multiComparison).toBeNull();
+  });
+
+  it("detects element peaks instead of background-dominated KL peaks", () => {
+    const source = buildLoadedFile(
+      "source.txt",
+      buildCustomPeakDetector("detector-1", [
+        { channel: 612, amplitude: 30, width: 12 },
+      ]),
+    );
+    const background = buildLoadedFile(
+      "background.txt",
+      buildCustomPeakDetector("detector-1", [
+        { channel: 175, amplitude: 800, width: 10 },
+      ]),
+    );
+
+    const analysis = analyzeSpectrumSet({
+      sourceFiles: [source],
+      backgroundFiles: [background],
+      selectedDetectorIds: ["detector-1"],
+      aggregationMode: "mean",
+      preprocessingSettings: DEFAULT_PREPROCESSING_SETTINGS,
+      peakDetectionSettings: DEFAULT_PEAK_DETECTION_SETTINGS,
+      roiDetectionSettings: DEFAULT_ROI_DETECTION_SETTINGS,
+    });
+
+    expect(analysis.peaks.some((peak) => Math.abs(peak.refinedChannel - 612) < 10)).toBe(
+      true,
+    );
+    expect(
+      analysis.rois.some(
+        (roi) => roi.startChannel <= 612 && roi.endChannel >= 612,
+      ),
+    ).toBe(true);
+  });
+
+  it("uses channels 200-900 as the working ROI range", () => {
+    const source = buildLoadedFile(
+      "source.txt",
+      buildCustomPeakDetector("detector-1", [
+        { channel: 40, amplitude: 180, width: 7 },
+        { channel: 612, amplitude: 120, width: 12 },
+      ]),
+    );
+    const background = buildLoadedFile(
+      "background.txt",
+      buildFlatDetector("detector-1", 5),
+    );
+
+    const analysis = analyzeSpectrumSet({
+      sourceFiles: [source],
+      backgroundFiles: [background],
+      selectedDetectorIds: ["detector-1"],
+      aggregationMode: "mean",
+      preprocessingSettings: DEFAULT_PREPROCESSING_SETTINGS,
+      peakDetectionSettings: DEFAULT_PEAK_DETECTION_SETTINGS,
+      roiDetectionSettings: DEFAULT_ROI_DETECTION_SETTINGS,
+    });
+
+    expect(
+      analysis.rois.some(
+        (roi) => roi.startChannel <= 40 && roi.endChannel >= 40,
+      ),
+    ).toBe(false);
+    expect(
+      analysis.rois.some(
+        (roi) => roi.startChannel <= 612 && roi.endChannel >= 612,
+      ),
+    ).toBe(true);
+    expect(analysis.comparison?.infoPerChannel.slice(0, 200).some(Boolean)).toBe(
+      false,
+    );
+  });
+
+  it("can search peaks on the combined element plus background signal", () => {
+    const source = buildLoadedFile(
+      "source.txt",
+      buildFlatDetector("detector-1", 5),
+    );
+    const background = buildLoadedFile(
+      "background.txt",
+      buildCustomPeakDetector("detector-1", [
+        { channel: 612, amplitude: 150, width: 12 },
+      ]),
+    );
+
+    const defaultAnalysis = analyzeSpectrumSet({
+      sourceFiles: [source],
+      backgroundFiles: [background],
+      selectedDetectorIds: ["detector-1"],
+      aggregationMode: "mean",
+      preprocessingSettings: DEFAULT_PREPROCESSING_SETTINGS,
+      peakDetectionSettings: DEFAULT_PEAK_DETECTION_SETTINGS,
+      roiDetectionSettings: DEFAULT_ROI_DETECTION_SETTINGS,
+    });
+    const combinedAnalysis = analyzeSpectrumSet({
+      sourceFiles: [source],
+      backgroundFiles: [background],
+      selectedDetectorIds: ["detector-1"],
+      aggregationMode: "mean",
+      preprocessingSettings: DEFAULT_PREPROCESSING_SETTINGS,
+      peakDetectionSettings: DEFAULT_PEAK_DETECTION_SETTINGS,
+      roiDetectionSettings: DEFAULT_ROI_DETECTION_SETTINGS,
+      peakSearchSignal: "combined",
+    });
+
+    expect(
+      defaultAnalysis.peaks.some(
+        (peak) => Math.abs(peak.refinedChannel - 612) < 10,
+      ),
+    ).toBe(false);
+    expect(
+      combinedAnalysis.peaks.some(
+        (peak) => Math.abs(peak.refinedChannel - 612) < 10,
+      ),
+    ).toBe(true);
+  });
+
+  it("thresholds combined peak search inside the 200-900 working range", () => {
+    const source = buildLoadedFile(
+      "source.txt",
+      buildFlatDetector("detector-1", 1),
+    );
+    const background = buildLoadedFile(
+      "background.txt",
+      buildCustomPeakDetector("detector-1", [
+        { channel: 80, amplitude: 1200, width: 18 },
+        { channel: 612, amplitude: 80, width: 12 },
+      ]),
+    );
+
+    const analysis = analyzeSpectrumSet({
+      sourceFiles: [source],
+      backgroundFiles: [background],
+      selectedDetectorIds: ["detector-1"],
+      aggregationMode: "mean",
+      preprocessingSettings: DEFAULT_PREPROCESSING_SETTINGS,
+      peakDetectionSettings: DEFAULT_PEAK_DETECTION_SETTINGS,
+      roiDetectionSettings: DEFAULT_ROI_DETECTION_SETTINGS,
+      peakSearchSignal: "combined",
+    });
+
+    expect(
+      analysis.peaks.some((peak) => Math.abs(peak.refinedChannel - 612) < 10),
+    ).toBe(true);
+    expect(
+      analysis.peaks.some((peak) => Math.abs(peak.refinedChannel - 80) < 10),
+    ).toBe(false);
   });
 
   it("builds ROIs from differences between multiple element spectra", () => {
@@ -384,7 +547,11 @@ describe("analyzeSpectrum", () => {
       processed,
       ["detector-1"],
       infoPerChannel,
-      DEFAULT_ROI_DETECTION_SETTINGS,
+      {
+        ...DEFAULT_ROI_DETECTION_SETTINGS,
+        minChannel: 0,
+        maxChannel: corrected.length - 1,
+      },
     );
 
     expect(result.rois).toHaveLength(1);

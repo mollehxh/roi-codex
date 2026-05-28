@@ -1,5 +1,6 @@
 import {
-  buildInformationRois,
+  buildRoisFromInformation,
+  computeInformationPerChannel,
   buildRois,
 } from "../roi/roiDetection";
 import { aggregateDetectors } from "../spectrum/aggregation";
@@ -14,6 +15,7 @@ import type {
   ComparisonSpectrum,
   DetectorSpectrum,
   InformationMetric,
+  PeakSearchSignal,
   PeakDetectionSettings,
   PreprocessingSettings,
   RoiDetectionSettings,
@@ -32,6 +34,7 @@ interface AnalyzeSpectrumInput {
   peakDetectionSettings: PeakDetectionSettings;
   roiDetectionSettings: RoiDetectionSettings;
   informationMetric?: InformationMetric;
+  peakSearchSignal?: PeakSearchSignal;
 }
 
 export function analyzeSpectrum({
@@ -45,7 +48,8 @@ export function analyzeSpectrum({
   preprocessingSettings,
   peakDetectionSettings,
   roiDetectionSettings,
-  informationMetric = "proposed",
+  informationMetric = "fisher",
+  peakSearchSignal = "element",
 }: AnalyzeSpectrumInput): SpectrumAnalysisResult {
   const sourceAggregated = aggregateDetectors(
     detectors,
@@ -54,6 +58,8 @@ export function analyzeSpectrum({
   );
   let comparison: ComparisonSpectrum | null = null;
   let aggregated = sourceAggregated;
+  let peakSearchAggregated = sourceAggregated;
+  let infoPerChannel: number[] | null = null;
 
   if (
     analysisMode === "comparison" &&
@@ -66,28 +72,42 @@ export function analyzeSpectrum({
       selectedBackgroundDetectorIds,
       aggregationMode,
     );
-    aggregated = {
-      detectorIds: sourceAggregated.detectorIds,
-      mode: aggregationMode,
-      channels: sourceAggregated.channels.map(
-        (value, index) => value - (backgroundAggregated.channels[index] ?? 0),
-      ),
-      calibration: sourceAggregated.calibration,
-    };
+    infoPerChannel = computeInformationPerChannel(
+      sourceAggregated.channels,
+      backgroundAggregated.channels,
+      informationMetric,
+    );
+    if (peakSearchSignal === "combined") {
+      peakSearchAggregated = {
+        detectorIds: sourceAggregated.detectorIds,
+        mode: aggregationMode,
+        channels: sourceAggregated.channels.map(
+          (value, index) => value + (backgroundAggregated.channels[index] ?? 0),
+        ),
+        calibration: sourceAggregated.calibration,
+      };
+    }
     comparison = {
       source: sourceAggregated,
       background: backgroundAggregated,
-      difference: aggregated,
-      infoPerChannel: [],
+      difference: {
+        detectorIds: sourceAggregated.detectorIds,
+        mode: aggregationMode,
+        channels: sourceAggregated.channels.map(
+          (value, index) => value - (backgroundAggregated.channels[index] ?? 0),
+        ),
+        calibration: sourceAggregated.calibration,
+      },
+      infoPerChannel,
       totalInformation: 0,
     };
   }
 
-  const processed = preprocessSpectrum(aggregated, preprocessingSettings);
+  const processed = preprocessSpectrum(peakSearchAggregated, preprocessingSettings);
   const autoPeaks = detectPeaks(
     processed,
     peakDetectionSettings,
-    aggregated.calibration,
+    peakSearchAggregated.calibration,
   );
   const suggestedPeaks = autoPeaks.peaks;
   const peaks =
@@ -96,22 +116,20 @@ export function analyzeSpectrum({
           processed,
           manualPeakChannels,
           peakDetectionSettings,
-          aggregated.calibration,
+          peakSearchAggregated.calibration,
           "manual",
         )
       : suggestedPeaks;
 
   let rois = buildRois(peaks, processed, aggregated.detectorIds, roiDetectionSettings);
 
-  if (comparison) {
-    const comparisonRois = buildInformationRois(
+  if (comparison && infoPerChannel) {
+    const comparisonRois = buildRoisFromInformation(
       peaks,
       processed,
       aggregated.detectorIds,
-      comparison.source.channels,
-      comparison.background.channels,
+      infoPerChannel,
       roiDetectionSettings,
-      informationMetric,
     );
     rois = comparisonRois.rois;
     comparison.infoPerChannel = comparisonRois.infoPerChannel;

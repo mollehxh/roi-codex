@@ -7,6 +7,7 @@ import {
   Loader,
   Select,
   Stack,
+  Switch,
   Text,
 } from "@mantine/core";
 import { analyzeSpectrumSet } from "./domain/analysis/analyzeSpectrumSet";
@@ -69,6 +70,7 @@ export default function App() {
   const [isLoadingSourceFiles, setIsLoadingSourceFiles] = useState(false);
   const [isLoadingBackgroundFiles, setIsLoadingBackgroundFiles] =
     useState(false);
+  const [searchPeaksOnCombined, setSearchPeaksOnCombined] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const commonDetectors = useMemo(
@@ -121,7 +123,8 @@ export default function App() {
             preprocessingSettings: DEFAULT_PREPROCESSING_SETTINGS,
             peakDetectionSettings: DEFAULT_PEAK_DETECTION_SETTINGS,
             roiDetectionSettings: DEFAULT_ROI_DETECTION_SETTINGS,
-            informationMetric: "proposed",
+            informationMetric: "fisher",
+            peakSearchSignal: searchPeaksOnCombined ? "combined" : "element",
           }),
         );
         setError(null);
@@ -134,7 +137,7 @@ export default function App() {
         setAnalysis(null);
       }
     });
-  }, [sourceFiles, backgroundFiles, selectedDetectorId]);
+  }, [sourceFiles, backgroundFiles, selectedDetectorId, searchPeaksOnCombined]);
 
   async function handleSourceFilesSelected(files: File[]) {
     if (files.length === 0) {
@@ -196,19 +199,17 @@ export default function App() {
   return (
     <Stack gap="sm" p="sm">
       <Group gap="xs">
-        {/* Тут специально перепутаны кнопки и их названия местами*/}
         <FileDropzone
           label="Элемент:"
-          fileNames={backgroundFiles.map((file) => file.fileName)}
-          maxFiles={20}
-          onFilesSelected={handleBackgroundFilesSelected}
-        />
-        {/* Тут специально перепутаны кнопки и их названия местами*/}
-        <FileDropzone
-          label="Фон:"
           fileNames={sourceFiles.map((file) => file.fileName)}
           maxFiles={20}
           onFilesSelected={handleSourceFilesSelected}
+        />
+        <FileDropzone
+          label="Фон:"
+          fileNames={backgroundFiles.map((file) => file.fileName)}
+          maxFiles={20}
+          onFilesSelected={handleBackgroundFilesSelected}
         />
         <Group gap="xs" wrap="nowrap">
           <Text size="sm" fw={700}>
@@ -273,6 +274,17 @@ export default function App() {
               Пересчет ROI
             </Text>
           ) : null}
+          <Card withBorder>
+            <Switch
+              checked={searchPeaksOnCombined}
+              label="Искать пики по линии «Элемент + фон»"
+              description="Фича-флаг: по умолчанию пики ищутся по спектру элемента."
+              onChange={(event) => {
+                setSearchPeaksOnCombined(event.currentTarget.checked);
+                setSelectedRoiId(null);
+              }}
+            />
+          </Card>
         </>
       ) : null}
     </Stack>

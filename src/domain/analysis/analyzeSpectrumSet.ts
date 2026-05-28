@@ -17,6 +17,7 @@ import type {
   AggregationMode,
   DetectorSpectrum,
   InformationMetric,
+  PeakSearchSignal,
   LoadedSpcFile,
   Peak,
   PeakDetectionSettings,
@@ -37,6 +38,7 @@ interface AnalyzeSpectrumSetInput {
   peakDetectionSettings: PeakDetectionSettings;
   roiDetectionSettings: RoiDetectionSettings;
   informationMetric?: InformationMetric;
+  peakSearchSignal?: PeakSearchSignal;
 }
 
 interface SourceCandidateAnalysis {
@@ -215,6 +217,21 @@ function buildInfoSpectrum(
   };
 }
 
+function buildCombinedSpectrum(
+  source: AggregatedSpectrum,
+  background: AggregatedSpectrum,
+  aggregationMode: AggregationMode,
+): AggregatedSpectrum {
+  return {
+    detectorIds: source.detectorIds,
+    mode: aggregationMode,
+    channels: source.channels.map(
+      (value, index) => value + (background.channels[index] ?? 0),
+    ),
+    calibration: source.calibration,
+  };
+}
+
 function analyzeSourceAgainstBackground(
   source: AggregatedSpectrum,
   background: AggregatedSpectrum,
@@ -225,32 +242,41 @@ function analyzeSourceAgainstBackground(
   peakDetectionSettings: PeakDetectionSettings,
   roiDetectionSettings: RoiDetectionSettings,
   informationMetric: InformationMetric,
+  peakSearchSignal: PeakSearchSignal,
 ): SourceCandidateAnalysis {
   const infoPerChannel = computeInformationPerChannel(
     source.channels,
     background.channels,
     informationMetric,
   );
+  const peakSearchSpectrum =
+    peakSearchSignal === "combined"
+      ? buildCombinedSpectrum(source, background, aggregationMode)
+      : source;
+  const processedSource = preprocessSpectrum(
+    peakSearchSpectrum,
+    preprocessingSettings,
+  );
   const infoSpectrum = buildInfoSpectrum(source, infoPerChannel, aggregationMode);
   const processedInfo = preprocessSpectrum(infoSpectrum, preprocessingSettings);
   const autoPeaks = detectPeaks(
-    processedInfo,
+    processedSource,
     peakDetectionSettings,
-    source.calibration,
+    peakSearchSpectrum.calibration,
   ).peaks;
   const peaks =
     manualPeakChannels && manualPeakChannels.length > 0
       ? buildPeaksFromChannels(
-          processedInfo,
+          processedSource,
           manualPeakChannels,
           peakDetectionSettings,
-          source.calibration,
+          peakSearchSpectrum.calibration,
           "manual",
         )
       : autoPeaks;
   const informationRois = buildRoisFromInformation(
     peaks,
-    processedInfo,
+    processedSource,
     source.detectorIds,
     infoPerChannel,
     roiDetectionSettings,
@@ -260,7 +286,7 @@ function analyzeSourceAgainstBackground(
     sourceIndex,
     source,
     background,
-    infoPerChannel,
+    infoPerChannel: informationRois.infoPerChannel,
     processedInfo,
     peaks,
     rois: informationRois.rois,
@@ -461,7 +487,8 @@ export function analyzeSpectrumSet({
   preprocessingSettings,
   peakDetectionSettings,
   roiDetectionSettings,
-  informationMetric = "proposed",
+  informationMetric = "fisher",
+  peakSearchSignal = "element",
 }: AnalyzeSpectrumSetInput): SpectrumAnalysisResult {
   if (sourceFiles.length === 0) {
     throw new Error("Загрузите хотя бы один спектр источника.");
@@ -494,6 +521,7 @@ export function analyzeSpectrumSet({
       peakDetectionSettings,
       roiDetectionSettings,
       informationMetric,
+      peakSearchSignal,
     });
   }
 
@@ -515,6 +543,7 @@ export function analyzeSpectrumSet({
       peakDetectionSettings,
       roiDetectionSettings,
       informationMetric,
+      peakSearchSignal,
     ),
   );
   const utilityProfile = buildUtilityProfile(candidateAnalyses);
