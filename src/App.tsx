@@ -25,6 +25,12 @@ import { RoiTable } from "./ui/components/RoiTable";
 import { SpectrumChart } from "./ui/components/SpectrumChart";
 
 const AGGREGATION_MODE: AggregationMode = "mean";
+const DEMO_SOURCE_FILES = [
+  { url: "/demo/source/_Fe_.txt", name: "_Fe_.txt" },
+];
+const DEMO_BACKGROUND_FILES = [
+  { url: "/demo/background/_s1_.txt", name: "_s1_.txt" },
+];
 
 function getCommonDetectors(
   sourceFiles: LoadedSpcFile[],
@@ -57,6 +63,18 @@ async function parseSpectrumFiles(files: File[]) {
   return Promise.all(files.map((file) => parseSpectrumFile(file)));
 }
 
+async function fetchDemoFile(file: { url: string; name: string }) {
+  const response = await fetch(file.url);
+
+  if (!response.ok) {
+    throw new Error(`Не удалось загрузить demo-файл ${file.name}.`);
+  }
+
+  return new File([await response.blob()], file.name, {
+    type: "text/plain",
+  });
+}
+
 export default function App() {
   const [sourceFiles, setSourceFiles] = useState<LoadedSpcFile[]>([]);
   const [backgroundFiles, setBackgroundFiles] = useState<LoadedSpcFile[]>([]);
@@ -83,6 +101,59 @@ export default function App() {
       })),
     [commonDetectors],
   );
+
+  useEffect(() => {
+    let canceled = false;
+
+    async function preloadDemoFiles() {
+      setIsLoadingSourceFiles(true);
+      setIsLoadingBackgroundFiles(true);
+      setError(null);
+
+      try {
+        const [sourceDemoFiles, backgroundDemoFiles] = await Promise.all([
+          Promise.all(DEMO_SOURCE_FILES.map(fetchDemoFile)),
+          Promise.all(DEMO_BACKGROUND_FILES.map(fetchDemoFile)),
+        ]);
+        const [nextSourceFiles, nextBackgroundFiles] = await Promise.all([
+          parseSpectrumFiles(sourceDemoFiles),
+          parseSpectrumFiles(backgroundDemoFiles),
+        ]);
+
+        if (canceled) {
+          return;
+        }
+
+        setSourceFiles(nextSourceFiles);
+        setBackgroundFiles(nextBackgroundFiles);
+        setSelectedRoiId(null);
+      } catch (nextError) {
+        if (canceled) {
+          return;
+        }
+
+        const message =
+          nextError instanceof Error
+            ? nextError.message
+            : "Не удалось загрузить demo-файлы.";
+        setError(message);
+        setSourceFiles([]);
+        setBackgroundFiles([]);
+        setAnalysis(null);
+      } finally {
+        if (!canceled) {
+          setIsLoadingSourceFiles(false);
+          setIsLoadingBackgroundFiles(false);
+        }
+      }
+    }
+
+    void preloadDemoFiles();
+
+    return () => {
+      canceled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (commonDetectors.length === 0) {
