@@ -109,6 +109,11 @@ export interface ComparisonSpectrum {
   totalInformation: number;
 }
 
+export interface InformationTotals {
+  kl: number;
+  fisher: number;
+}
+
 export interface NamedAggregatedSpectrum {
   id: string;
   name: string;
@@ -137,6 +142,7 @@ export interface SpectrumAnalysisResult {
   suggestedPeaks: Peak[];
   peaks: Peak[];
   rois: ROI[];
+  informationTotals: InformationTotals;
   comparison: ComparisonSpectrum | null;
   multiComparison: MultiSpectrumComparison | null;
 }

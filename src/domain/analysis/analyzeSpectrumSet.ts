@@ -546,6 +546,36 @@ export function analyzeSpectrumSet({
       peakSearchSignal,
     ),
   );
+  const buildMetricUtilityTotal = (metric: InformationMetric) => {
+    const metricCandidateAnalyses =
+      metric === informationMetric
+        ? candidateAnalyses
+        : sourceAggregates.map((source, sourceIndex) =>
+            analyzeSourceAgainstBackground(
+              source,
+              resolveBackgroundForSource(
+                source,
+                sourceIndex,
+                sourceAggregates.length,
+                backgroundAggregates,
+                backgroundMean,
+              ),
+              sourceIndex,
+              manualPeakChannels,
+              aggregationMode,
+              preprocessingSettings,
+              peakDetectionSettings,
+              roiDetectionSettings,
+              metric,
+              peakSearchSignal,
+            ),
+          );
+
+    return buildUtilityProfile(metricCandidateAnalyses).reduce(
+      (sum, value) => sum + value,
+      0,
+    );
+  };
   const utilityProfile = buildUtilityProfile(candidateAnalyses);
   const discriminant: AggregatedSpectrum = {
     detectorIds: [...selectedDetectorIds],
@@ -568,6 +598,10 @@ export function analyzeSpectrumSet({
     sourceMean,
   );
   const totalInformation = utilityProfile.reduce((sum, value) => sum + value, 0);
+  const informationTotals = {
+    kl: buildMetricUtilityTotal("kl"),
+    fisher: buildMetricUtilityTotal("fisher"),
+  };
 
   return {
     aggregated: discriminant,
@@ -575,6 +609,7 @@ export function analyzeSpectrumSet({
     suggestedPeaks: peaks,
     peaks,
     rois,
+    informationTotals,
     comparison: {
       source: sourceMean,
       background: displayBackground,

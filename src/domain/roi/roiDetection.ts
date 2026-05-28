@@ -748,6 +748,27 @@ export function computeInformationPerChannel(
   });
 }
 
+export function computeTotalInformation(
+  sourceChannels: number[],
+  backgroundChannels: number[],
+  settings: RoiDetectionSettings,
+  metric: InformationMetric,
+) {
+  const infoPerChannel = computeInformationPerChannel(
+    sourceChannels,
+    backgroundChannels,
+    metric,
+  );
+  const minChannel = Math.max(0, settings.minChannel);
+  const maxChannel = Math.min(infoPerChannel.length - 1, settings.maxChannel);
+
+  return infoPerChannel.reduce(
+    (sum, value, channel) =>
+      channel >= minChannel && channel <= maxChannel ? sum + value : sum,
+    0,
+  );
+}
+
 export function buildInformationRois(
   peaks: Peak[],
   processed: ProcessedSpectrum,

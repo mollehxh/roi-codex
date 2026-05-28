@@ -271,6 +271,11 @@ describe("analyzeSpectrum", () => {
 
     expect(analysis.comparison?.background.channels[12]).toBeCloseTo(5, 5);
     expect(analysis.multiComparison).toBeNull();
+    expect(analysis.informationTotals.kl).toBeGreaterThan(0);
+    expect(analysis.informationTotals.fisher).toBeCloseTo(
+      analysis.comparison?.totalInformation ?? 0,
+      8,
+    );
   });
 
   it("detects element peaks instead of background-dominated KL peaks", () => {
@@ -447,6 +452,11 @@ describe("analyzeSpectrum", () => {
 
     expect(analysis.multiComparison?.sources).toHaveLength(2);
     expect(analysis.multiComparison?.totalInformation).toBeGreaterThan(0);
+    expect(analysis.informationTotals.kl).toBeGreaterThan(0);
+    expect(analysis.informationTotals.fisher).toBeCloseTo(
+      analysis.multiComparison?.totalInformation ?? 0,
+      8,
+    );
     expect(analysis.peaks.some((peak) => Math.abs(peak.refinedChannel - 220) < 8)).toBe(
       true,
     );

@@ -1,6 +1,7 @@
 import {
   buildRoisFromInformation,
   computeInformationPerChannel,
+  computeTotalInformation,
   buildRois,
 } from "../roi/roiDetection";
 import { aggregateDetectors } from "../spectrum/aggregation";
@@ -60,6 +61,10 @@ export function analyzeSpectrum({
   let aggregated = sourceAggregated;
   let peakSearchAggregated = sourceAggregated;
   let infoPerChannel: number[] | null = null;
+  let informationTotals = {
+    kl: 0,
+    fisher: 0,
+  };
 
   if (
     analysisMode === "comparison" &&
@@ -77,6 +82,20 @@ export function analyzeSpectrum({
       backgroundAggregated.channels,
       informationMetric,
     );
+    informationTotals = {
+      kl: computeTotalInformation(
+        sourceAggregated.channels,
+        backgroundAggregated.channels,
+        roiDetectionSettings,
+        "kl",
+      ),
+      fisher: computeTotalInformation(
+        sourceAggregated.channels,
+        backgroundAggregated.channels,
+        roiDetectionSettings,
+        "fisher",
+      ),
+    };
     if (peakSearchSignal === "combined") {
       peakSearchAggregated = {
         detectorIds: sourceAggregated.detectorIds,
@@ -142,6 +161,7 @@ export function analyzeSpectrum({
     processed,
     peaks,
     rois,
+    informationTotals,
     comparison,
     multiComparison: null,
   };

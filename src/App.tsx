@@ -7,7 +7,6 @@ import {
   Loader,
   Select,
   Stack,
-  Switch,
   Text,
 } from "@mantine/core";
 import { analyzeSpectrumSet } from "./domain/analysis/analyzeSpectrumSet";
@@ -70,7 +69,6 @@ export default function App() {
   const [isLoadingSourceFiles, setIsLoadingSourceFiles] = useState(false);
   const [isLoadingBackgroundFiles, setIsLoadingBackgroundFiles] =
     useState(false);
-  const [searchPeaksOnCombined, setSearchPeaksOnCombined] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const commonDetectors = useMemo(
@@ -124,7 +122,6 @@ export default function App() {
             peakDetectionSettings: DEFAULT_PEAK_DETECTION_SETTINGS,
             roiDetectionSettings: DEFAULT_ROI_DETECTION_SETTINGS,
             informationMetric: "fisher",
-            peakSearchSignal: searchPeaksOnCombined ? "combined" : "element",
           }),
         );
         setError(null);
@@ -137,7 +134,7 @@ export default function App() {
         setAnalysis(null);
       }
     });
-  }, [sourceFiles, backgroundFiles, selectedDetectorId, searchPeaksOnCombined]);
+  }, [sourceFiles, backgroundFiles, selectedDetectorId]);
 
   async function handleSourceFilesSelected(files: File[]) {
     if (files.length === 0) {
@@ -191,10 +188,10 @@ export default function App() {
 
   const isLoadingFile = isLoadingSourceFiles || isLoadingBackgroundFiles;
   const hasInputFiles = sourceFiles.length > 0 && backgroundFiles.length > 0;
-  const totalInformation =
-    analysis?.multiComparison?.totalInformation ??
-    analysis?.comparison?.totalInformation ??
-    0;
+  const informationTotals = analysis?.informationTotals ?? {
+    kl: 0,
+    fisher: 0,
+  };
 
   return (
     <Stack gap="sm" p="sm">
@@ -258,7 +255,7 @@ export default function App() {
                 showPeaks={DEFAULT_OVERLAY_VISIBILITY.showPeaks}
                 showRoi={DEFAULT_OVERLAY_VISIBILITY.showRoi}
                 selectedRoiId={selectedRoiId}
-                totalInformation={totalInformation}
+                informationTotals={informationTotals}
               />
             </Grid.Col>
             <Grid.Col span={{ base: 12, lg: 3 }}>
@@ -274,17 +271,6 @@ export default function App() {
               Пересчет ROI
             </Text>
           ) : null}
-          <Card withBorder>
-            <Switch
-              checked={searchPeaksOnCombined}
-              label="Искать пики по линии «Элемент + фон»"
-              description="Фича-флаг: по умолчанию пики ищутся по спектру элемента."
-              onChange={(event) => {
-                setSearchPeaksOnCombined(event.currentTarget.checked);
-                setSelectedRoiId(null);
-              }}
-            />
-          </Card>
         </>
       ) : null}
     </Stack>
